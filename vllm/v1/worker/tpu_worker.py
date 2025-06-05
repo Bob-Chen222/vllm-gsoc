@@ -4,12 +4,12 @@
 import os
 from typing import Optional
 
-import torch
-import torch.distributed
-import torch.nn as nn
-import torch_xla.core.xla_model as xm
-import torch_xla.debug.profiler as xp
-import torch_xla.runtime as xr
+import jax
+import jax.numpy as jnp
+from jax import random, grad, jit, vmap, pmap
+
+import flax.linen as nn
+
 
 import vllm.envs as envs
 from vllm.config import ParallelConfig, VllmConfig
@@ -66,6 +66,10 @@ class TPUWorker:
         self.rank = rank
         self.distributed_init_method = distributed_init_method
 
+        # random generator management
+        # BOBNOTE: each device should have its own random key
+        self.random_key = random.PRNGKey(self.model_config.seed)
+
         if self.cache_config.cache_dtype == "auto":
             self.cache_dtype = self.model_config.dtype
         else:
@@ -94,6 +98,7 @@ class TPUWorker:
             self.model_config.seed = 0
 
     def init_device(self):
+        # NOTE(Qinghan):os.environ is used for changing the environment varaibles with these
         os.environ["PJRT_DEVICE"] = "TPU"
         # Note: Currently the XLA compiler wrongly uses 2D ring strategy on 1D
         # ring, the xla tpu compiler flag
@@ -101,44 +106,40 @@ class TPUWorker:
         # fix this. It will be removed after the bug in XLA compiler is fixed.
         os.environ["LIBTPU_INIT_ARGS"] = (
             "--xla_tpu_force_1d_allreduce_at_chunk_count=1")
-        torch.set_grad_enabled(False)
-        torch.set_default_dtype(self.model_config.dtype)
+        
+        # NOTE(Qinghan): Gradient tracking is opt-in via jax.grad; no global setting required.
+        # torch.set_grad_enabled(False)
+        # WARNING(Qinghan):according to GPT, there is no way to enforce a specific dtype in jax, have to manually specify at every function call
+        # torch.set_default_dtype(self.model_config.dtype)
 
         # Initialize the distributed environment.
-        self._init_tpu_worker_distributed_environment(
-            self.parallel_config, self.rank, self.distributed_init_method,
-            self.local_rank)
+        # self._init_tpu_worker_distributed_environment(
+        #     self.parallel_config, self.rank, self.distributed_init_method,
+        #     self.local_rank)
+        jax.distributed.initialize()
 
         # Device initialization should happen after initializing
         # the distributed runtime.
-        self.device = xm.xla_device()
-        self.device_config.device = self.device
+        # NOTE (Qinghan): in jax, no need to specify the device
+        # self.device = xm.xla_device()
+        # self.device_config.device = self.device
 
-        # Set random seed.
-        set_random_seed(self.model_config.seed)
-        if self.model_config.seed is not None:
-            xm.set_rng_state(self.model_config.seed, self.device)
-
-        # Increase the cache size limit, which is the maximum number of
-        # dynamo graphs that can be compiled.
-        # TODO (NickLucche) On gsm we compile 80+ graphs.
-        # Re-evaluate limit, with MM we may get close to this limit.
-        torch._dynamo.config.cache_size_limit = 128
-        # Use persistent cache to avoid XLA recompilation.
-        # NOTE(woosuk): Set per-rank cache path since different ranks
-        # can have slightly different XLA graphs.
-        world_size = self.parallel_config.world_size
-        rank = xr.global_ordinal()
-        # The PyTorch/XLA compilation cache uses the Torch IR to generate keys.
-        # Consequently, changes in optimization flags, which affect compilation
-        # results, don't change the cache key. This can result in the wrong
-        # compilation being used. To prevent this, disabling the XLA compilation
-        # cache during development is recommended.We can disable it by
-        # `export VLLM_XLA_CACHE_PATH=`
-        if envs.VLLM_XLA_CACHE_PATH:
-            per_rank_path = os.path.join(envs.VLLM_XLA_CACHE_PATH,
-                                         f"tp{world_size}_rank{rank}")
-            xr.initialize_cache(per_rank_path, readonly=False)
+        # large part of the code that has nothing to do with jax
+        # # Use persistent cache to avoid XLA recompilation.
+        # # NOTE(woosuk): Set per-rank cache path since different ranks
+        # # can have slightly different XLA graphs.
+        # world_size = self.parallel_config.world_size
+        # rank = xr.global_ordinal()
+        # # The PyTorch/XLA compilation cache uses the Torch IR to generate keys.
+        # # Consequently, changes in optimization flags, which affect compilation
+        # # results, don't change the cache key. This can result in the wrong
+        # # compilation being used. To prevent this, disabling the XLA compilation
+        # # cache during development is recommended.We can disable it by
+        # # `export VLLM_XLA_CACHE_PATH=`
+        # if envs.VLLM_XLA_CACHE_PATH:
+        #     per_rank_path = os.path.join(envs.VLLM_XLA_CACHE_PATH,
+        #                                  f"tp{world_size}_rank{rank}")
+        #     xr.initialize_cache(per_rank_path, readonly=False)
 
         # Init ModelRunner here, so that we have access to self.device.
         self.model_runner = \
@@ -261,6 +262,8 @@ class TPUWorker:
         # worker will always be healthy as long as it's running.
         return
 
+    # BOBNOTE: since jax does not explicitly use rank and stuff, simply call 
+    # BOBCHECK: according to the documentation, no parameters need to be passed
     def _init_tpu_worker_distributed_environment(
         self,
         parallel_config: ParallelConfig,
@@ -269,24 +272,24 @@ class TPUWorker:
         local_rank: int = -1,
     ) -> None:
         """Initialize the distributed environment."""
-        if self.use_spmd:
-            xr.use_spmd()
         # NOTE(woosuk): This is just to initialize the TP group and broadcast
         # the input objects on CPU. The all-reduce and all-gather ops on TPU
         # are invoked by `xm.all_reduce` and `xm.all_gather` which use their
         # own context.
-        init_distributed_environment(
-            world_size=parallel_config.world_size,
-            rank=rank,
-            local_rank=local_rank,
-            distributed_init_method=distributed_init_method,
-            backend="gloo",
-        )
-        ensure_model_parallel_initialized(
-            parallel_config.tensor_parallel_size,
-            parallel_config.pipeline_parallel_size)
+        # init_distributed_environment(
+        #     world_size=parallel_config.world_size,
+        #     rank=rank,
+        #     local_rank=local_rank,
+        #     distributed_init_method=distributed_init_method,
+        #     backend="gloo",
+        # )
 
+        # BOBCHECK: it is a function that seems unnecessary for jax
+        # ensure_model_parallel_initialized(
+        #     parallel_config.tensor_parallel_size,
+        #     parallel_config.pipeline_parallel_size)
 
+# having no idea about this module, will skip now
 try:
     from tpu_commons.worker import TPUWorker as TPUCommonsWorker
     TPUWorker = TPUCommonsWorker  # type: ignore
