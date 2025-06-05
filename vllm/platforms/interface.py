@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 import enum
 import os
 import platform
@@ -50,6 +51,7 @@ class _Backend(enum.Enum):
     TRITON_MLA_VLLM_V1 = enum.auto()
     FLASHMLA_VLLM_V1 = enum.auto()
     FLASHMLA = enum.auto()  # Supported by V1
+    CUTLASS_MLA_VLLM_V1 = enum.auto()
     HPU_ATTN = enum.auto()
     PALLAS = enum.auto()
     PALLAS_VLLM_V1 = enum.auto()
