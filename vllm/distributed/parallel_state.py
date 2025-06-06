@@ -908,59 +908,59 @@ def set_custom_all_reduce(enable: bool):
     _ENABLE_CUSTOM_ALL_REDUCE = enable
 
 
-def init_distributed_environment(
-    world_size: int = -1,
-    rank: int = -1,
-    distributed_init_method: str = "env://",
-    local_rank: int = -1,
-    backend: str = "nccl",
-):
-    logger.debug(
-        "world_size=%d rank=%d local_rank=%d "
-        "distributed_init_method=%s backend=%s", world_size, rank, local_rank,
-        distributed_init_method, backend)
-    from vllm.config import get_current_vllm_config
-    config = get_current_vllm_config()
-    if config is not None and config.parallel_config.data_parallel_size > 1:
-        parallel_config = config.parallel_config
-        # adjust to take into account data parallelism
-        # offset the rank by the data parallel rank
-        rank = parallel_config.data_parallel_rank * world_size + rank
-        # adjust the world size to take into account data parallelism
-        world_size = parallel_config.world_size_across_dp
-        ip = parallel_config.data_parallel_master_ip
-        port = parallel_config.get_next_dp_init_port()
-        distributed_init_method = get_distributed_init_method(ip, port)
-        logger.info(
-            "Adjusting world_size=%d rank=%d distributed_init_method=%s for DP",
-            world_size, rank, distributed_init_method)
-    if not torch.distributed.is_initialized():
-        assert distributed_init_method is not None, (
-            "distributed_init_method must be provided when initializing "
-            "distributed environment")
-        # this backend is used for WORLD
-        torch.distributed.init_process_group(
-            backend=backend,
-            init_method=distributed_init_method,
-            world_size=world_size,
-            rank=rank)
-    # set the local rank
-    # local_rank is not available in torch ProcessGroup,
-    # see https://github.com/pytorch/pytorch/issues/122816
-    if local_rank == -1:
-        # local rank not set, this usually happens in single-node
-        # setting, where we can use rank as local rank
-        if distributed_init_method == "env://":
-            local_rank = envs.LOCAL_RANK
-        else:
-            local_rank = rank
-    global _WORLD
-    if _WORLD is None:
-        ranks = list(range(torch.distributed.get_world_size()))
-        _WORLD = init_world_group(ranks, local_rank, backend)
-    else:
-        assert _WORLD.world_size == torch.distributed.get_world_size(), (
-            "world group already initialized with a different world size")
+# def init_distributed_environment(
+#     world_size: int = -1,
+#     rank: int = -1,
+#     distributed_init_method: str = "env://",
+#     local_rank: int = -1,
+#     backend: str = "nccl",
+# ):
+#     logger.debug(
+#         "world_size=%d rank=%d local_rank=%d "
+#         "distributed_init_method=%s backend=%s", world_size, rank, local_rank,
+#         distributed_init_method, backend)
+#     from vllm.config import get_current_vllm_config
+#     config = get_current_vllm_config()
+#     if config is not None and config.parallel_config.data_parallel_size > 1:
+#         parallel_config = config.parallel_config
+#         # adjust to take into account data parallelism
+#         # offset the rank by the data parallel rank
+#         rank = parallel_config.data_parallel_rank * world_size + rank
+#         # adjust the world size to take into account data parallelism
+#         world_size = parallel_config.world_size_across_dp
+#         ip = parallel_config.data_parallel_master_ip
+#         port = parallel_config.get_next_dp_init_port()
+#         distributed_init_method = get_distributed_init_method(ip, port)
+#         logger.info(
+#             "Adjusting world_size=%d rank=%d distributed_init_method=%s for DP",
+#             world_size, rank, distributed_init_method)
+#     if not torch.distributed.is_initialized():
+#         assert distributed_init_method is not None, (
+#             "distributed_init_method must be provided when initializing "
+#             "distributed environment")
+#         # this backend is used for WORLD
+#         torch.distributed.init_process_group(
+#             backend=backend,
+#             init_method=distributed_init_method,
+#             world_size=world_size,
+#             rank=rank)
+#     # set the local rank
+#     # local_rank is not available in torch ProcessGroup,
+#     # see https://github.com/pytorch/pytorch/issues/122816
+#     if local_rank == -1:
+#         # local rank not set, this usually happens in single-node
+#         # setting, where we can use rank as local rank
+#         if distributed_init_method == "env://":
+#             local_rank = envs.LOCAL_RANK
+#         else:
+#             local_rank = rank
+#     global _WORLD
+#     if _WORLD is None:
+#         ranks = list(range(torch.distributed.get_world_size()))
+#         _WORLD = init_world_group(ranks, local_rank, backend)
+#     else:
+#         assert _WORLD.world_size == torch.distributed.get_world_size(), (
+#             "world group already initialized with a different world size")
 
 
 def initialize_model_parallel(

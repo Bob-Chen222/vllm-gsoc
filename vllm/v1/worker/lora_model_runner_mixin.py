@@ -7,7 +7,7 @@ Define LoRA functionality mixin for model runners.
 from contextlib import contextmanager
 
 import numpy as np
-import torch.nn as nn
+from flax.experimental import nnx
 
 from vllm.config import LoRAConfig, ModelConfig, SchedulerConfig
 from vllm.logger import init_logger
@@ -25,9 +25,9 @@ class LoRAModelRunnerMixin:
 
     LORA_WARMUP_RANK = 8
 
-    def load_lora_model(self, model: nn.Module, model_config: ModelConfig,
+    def load_lora_model(self, model: nnx.Module, model_config: ModelConfig,
                         scheduler_config: SchedulerConfig,
-                        lora_config: LoRAConfig, device: str) -> nn.Module:
+                        lora_config: LoRAConfig, device: str) -> nnx.Module:
 
         if not supports_lora(model):
             raise ValueError(
