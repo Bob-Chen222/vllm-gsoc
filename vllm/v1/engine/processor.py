@@ -26,7 +26,7 @@ from vllm.v1.structured_output.backend_guidance import (
 from vllm.v1.structured_output.backend_xgrammar import (
     validate_xgrammar_grammar)
 
-
+# TODO (Bob): probably needs more documentation
 class Processor:
 
     def __init__(

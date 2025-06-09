@@ -27,6 +27,10 @@
 from collections.abc import Iterable
 from typing import Any, Optional, Union
 
+from flax import nnx
+import jax
+import jax.numpy as jnp
+
 import torch
 from torch import nn
 from transformers import Qwen2Config
@@ -421,7 +425,7 @@ class Qwen2Model(nn.Module):
         return loaded_params
 
 
-class Qwen2ForCausalLM(nn.Module, SupportsLoRA, SupportsPP):
+class Qwen2ForCausalLM(nnx.Module):
     packed_modules_mapping = {
         "qkv_proj": [
             "q_proj",
@@ -435,7 +439,6 @@ class Qwen2ForCausalLM(nn.Module, SupportsLoRA, SupportsPP):
     }
 
     def __init__(self, *, vllm_config: VllmConfig, prefix: str = ""):
-        super().__init__()
         config = vllm_config.model_config.hf_config
         quant_config = vllm_config.quant_config
         lora_config = vllm_config.lora_config
@@ -447,17 +450,16 @@ class Qwen2ForCausalLM(nn.Module, SupportsLoRA, SupportsPP):
         self.model = Qwen2Model(vllm_config=vllm_config,
                                 prefix=maybe_prefix(prefix, "model"))
 
-        if get_pp_group().is_last_rank:
-            if config.tie_word_embeddings:
-                self.lm_head = self.model.embed_tokens
-            else:
-                self.lm_head = ParallelLMHead(config.vocab_size,
-                                              config.hidden_size,
-                                              quant_config=quant_config,
-                                              prefix=maybe_prefix(
-                                                  prefix, "lm_head"))
-        else:
-            self.lm_head = PPMissingLayer()
+        # if get_pp_group().is_last_rank:
+        #     if config.tie_word_embeddings:
+        #         self.lm_head = self.model.embed_tokens
+        #     else:
+        #         self.lm_head = ParallelLMHead(config.vocab_size,
+        #                                       config.hidden_size,
+        #                                       quant_config=quant_config,
+        #                                       prefix=maybe_prefix(
+        #                                           prefix, "lm_head"))
+        self.lm_head = PPMissingLayer()
 
         self.logits_processor = LogitsProcessor(config.vocab_size)
 
