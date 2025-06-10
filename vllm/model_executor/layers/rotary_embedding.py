@@ -26,6 +26,10 @@
 import math
 from typing import Any, Optional, Union
 
+from flax import nnx
+import jax
+import jax.numpy as jnp
+
 import torch
 import torch.nn as nn
 from transformers import PretrainedConfig
@@ -99,7 +103,7 @@ class RotaryEmbedding(CustomOp):
         max_position_embeddings: int,
         base: float,
         is_neox_style: bool,
-        dtype: torch.dtype,
+        dtype: jnp.dtype,
     ) -> None:
         super().__init__()
         self.head_size = head_size
@@ -111,7 +115,7 @@ class RotaryEmbedding(CustomOp):
 
         cache = self._compute_cos_sin_cache()
         cache = cache.to(dtype)
-        self.cos_sin_cache: torch.Tensor
+        self.cos_sin_cache: jax.Array
         self.register_buffer("cos_sin_cache", cache, persistent=False)
 
     def _compute_inv_freq(self, base: float) -> torch.Tensor:
@@ -1709,12 +1713,12 @@ def get_rope(
     base: float,
     is_neox_style: bool = True,
     rope_scaling: Optional[dict[str, Any]] = None,
-    dtype: Optional[torch.dtype] = None,
+    dtype: Optional[jnp.dtype] = None,
     partial_rotary_factor: float = 1.0,
     dual_chunk_attention_config: Optional[dict[str, Any]] = None,
 ) -> RotaryEmbedding:
     if dtype is None:
-        dtype = torch.get_default_dtype()
+        dtype = jnp.float32
     if rope_scaling is not None:
         # Transforms every value that is a list into a tuple for caching calls
         rope_scaling_tuple = {
@@ -1726,6 +1730,7 @@ def get_rope(
         rope_scaling_args = None
 
     if dual_chunk_attention_config is not None:
+        assert(False) #BOBNOTE: I am just disabling this for now because I don't believe it will be actiavted
         dual_chunk_attention_tuple = {
             k: tuple(v) if isinstance(v, list) else v
             for k, v in dual_chunk_attention_config.items()

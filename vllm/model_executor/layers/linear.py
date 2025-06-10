@@ -5,6 +5,10 @@ import itertools
 from abc import abstractmethod
 from typing import Any, Literal, Optional, Union
 
+from flax import nnx
+import jax
+import jax.numpy as jnp
+
 import torch
 import torch.nn as nn
 from torch.nn.parameter import Parameter, UninitializedParameter
@@ -182,12 +186,12 @@ class LinearMethodBase(QuantizeMethodBase):
 class UnquantizedLinearMethod(LinearMethodBase):
     """Linear method without quantization."""
 
-    def create_weights(self, layer: torch.nn.Module,
+    def create_weights(self, layer: jax.nnx.Module,
                        input_size_per_partition: int,
                        output_partition_sizes: list[int], input_size: int,
-                       output_size: int, params_dtype: torch.dtype,
+                       output_size: int, params_dtype: jnp.dtype,
                        **extra_weight_attrs):
-        weight = Parameter(torch.empty(sum(output_partition_sizes),
+        weight = nnx.Parameter(jnp.empty(sum(output_partition_sizes),
                                        input_size_per_partition,
                                        dtype=params_dtype),
                            requires_grad=False)
@@ -203,7 +207,7 @@ class UnquantizedLinearMethod(LinearMethodBase):
         return dispatch_unquantized_gemm()(x, layer.weight, bias)
 
 
-class LinearBase(torch.nn.Module):
+class LinearBase(jax.nnx.Module):
     """Base linear layer.
 
     Args:
@@ -221,20 +225,18 @@ class LinearBase(torch.nn.Module):
         input_size: int,
         output_size: int,
         skip_bias_add: bool = False,
-        params_dtype: Optional[torch.dtype] = None,
+        params_dtype: Optional[jnp.dtype] = None,
         quant_config: Optional[QuantizationConfig] = None,
         prefix: str = "",
         *,
         return_bias: bool = True,
     ):
-        super().__init__()
-
         # Keep input parameters
         self.input_size = input_size
         self.output_size = output_size
         self.skip_bias_add = skip_bias_add
         if params_dtype is None:
-            params_dtype = torch.get_default_dtype()
+            params_dtype = jnp.float32
         self.params_dtype = params_dtype
         if quant_config is None:
             self.quant_method: Optional[
@@ -244,9 +246,7 @@ class LinearBase(torch.nn.Module):
                                                               prefix=prefix)
         self.return_bias = return_bias
 
-    def forward(
-        self, x: torch.Tensor
-    ) -> Union[torch.Tensor, tuple[torch.Tensor, Optional[Parameter]]]:
+    def __call__(self, x: jax.Array) -> Union[jax.Array, tuple[jax.Array, Optional[nnx.Param]]]:
         raise NotImplementedError
 
 
@@ -375,7 +375,7 @@ class ColumnParallelLinear(LinearBase):
         bias: bool = True,
         gather_output: bool = False,
         skip_bias_add: bool = False,
-        params_dtype: Optional[torch.dtype] = None,
+        params_dtype: Optional[jax.numpy.dtype] = None,
         quant_config: Optional[QuantizationConfig] = None,
         output_sizes: Optional[list[int]] = None,
         prefix: str = "",
@@ -419,9 +419,9 @@ class ColumnParallelLinear(LinearBase):
                 self.weight_loader_v2 if self.quant_method.__class__.__name__
                 in WEIGHT_LOADER_V2_SUPPORTED else self.weight_loader))
         if bias:
-            self.bias = Parameter(
-                torch.empty(self.output_size_per_partition,
-                            dtype=params_dtype))
+            self.bias = nnx.Param(
+            jnp.empty((self.output_size_per_partition,), dtype=params_dtype)
+)
             set_weight_attrs(self.bias, {
                 "output_dim": 0,
                 "weight_loader": self.weight_loader,
@@ -817,7 +817,7 @@ class QKVParallelLinear(ColumnParallelLinear):
         total_num_kv_heads: Optional[int] = None,
         bias: bool = True,
         skip_bias_add: bool = False,
-        params_dtype: Optional[torch.dtype] = None,
+        params_dtype: Optional[jnp.dtype] = None,
         quant_config: Optional[QuantizationConfig] = None,
         prefix: str = "",
         *,
@@ -1171,7 +1171,7 @@ class RowParallelLinear(LinearBase):
         bias: bool = True,
         input_is_parallel: bool = True,
         skip_bias_add: bool = False,
-        params_dtype: Optional[torch.dtype] = None,
+        params_dtype: Optional[jnp.dtype] = None,
         reduce_results: bool = True,
         quant_config: Optional[QuantizationConfig] = None,
         prefix: str = "",
@@ -1212,14 +1212,12 @@ class RowParallelLinear(LinearBase):
                              "results can lead to incorrect results")
 
         if bias:
-            self.bias = Parameter(
-                torch.empty(self.output_size, dtype=params_dtype))
+            self.bias = nnx.Parameter(
+                jnp.empty(self.output_size, dtype=params_dtype))
             set_weight_attrs(self.bias, {
                 "output_dim": 0,
                 "weight_loader": self.weight_loader,
             })
-        else:
-            self.register_parameter("bias", None)
 
     def weight_loader(self, param: Parameter, loaded_weight: torch.Tensor):
         tp_rank = get_tensor_model_parallel_rank()

@@ -98,7 +98,7 @@ class Qwen2MLP(nn.Module):
         return x
 
 
-class Qwen2Attention(nn.Module):
+class Qwen2Attention(nnx.Module):
 
     def __init__(
         self,
@@ -114,7 +114,6 @@ class Qwen2Attention(nn.Module):
         attn_type: str = AttentionType.DECODER,
         dual_chunk_attention_config: Optional[dict[str, Any]] = None,
     ) -> None:
-        super().__init__()
         self.hidden_size = hidden_size
         tp_size = get_tensor_model_parallel_world_size()
         self.total_num_heads = num_heads
@@ -137,6 +136,7 @@ class Qwen2Attention(nn.Module):
         self.rope_theta = rope_theta
         self.dual_chunk_attention_config = dual_chunk_attention_config
 
+            
         self.qkv_proj = QKVParallelLinear(
             hidden_size,
             self.head_dim,
@@ -189,7 +189,7 @@ class Qwen2Attention(nn.Module):
         return output
 
 
-class Qwen2DecoderLayer(nn.Module):
+class Qwen2DecoderLayer(nnx.Module):
 
     def __init__(
         self,
@@ -198,7 +198,6 @@ class Qwen2DecoderLayer(nn.Module):
         quant_config: Optional[QuantizationConfig] = None,
         prefix: str = "",
     ) -> None:
-        super().__init__()
         self.hidden_size = config.hidden_size
         # Requires transformers > 4.32.0
         rope_theta = getattr(config, "rope_theta", 1000000)
@@ -275,14 +274,13 @@ class Qwen2DecoderLayer(nn.Module):
         "intermediate_tensors": 0,
         "inputs_embeds": 0,
     })
-class Qwen2Model(nn.Module):
+class Qwen2Model(nnx.Module):
 
     def __init__(self,
                  *,
                  vllm_config: VllmConfig,
                  prefix: str = "",
-                 decoder_layer_type: type[nn.Module] = Qwen2DecoderLayer):
-        super().__init__()
+                 decoder_layer_type: type[nnx.Module] = Qwen2DecoderLayer):
 
         config = vllm_config.model_config.hf_config
         cache_config = vllm_config.cache_config

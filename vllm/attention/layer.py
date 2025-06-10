@@ -7,6 +7,10 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from flax import nnx
+import jax
+import jax.numpy as jnp
+
 import vllm.envs as envs
 from vllm.attention import AttentionType
 from vllm.attention.selector import backend_name_to_enum, get_attn_backend
@@ -24,7 +28,7 @@ from vllm.utils import direct_register_custom_op
 from vllm.v1.attention.backends.utils import validate_kv_sharing_target
 
 
-class Attention(nn.Module):
+class Attention(nnx.Module):
     """Attention layer.
 
     This class takes query, key, and value tensors as input. The input tensors
@@ -58,7 +62,6 @@ class Attention(nn.Module):
         The KV cache is stored inside this class and is accessed via
         `self.kv_cache`.
         """
-        super().__init__()
         if per_layer_sliding_window is not None:
             # per-layer sliding window
             sliding_window = per_layer_sliding_window
@@ -88,12 +91,12 @@ class Attention(nn.Module):
         # with the model weights.
         self.kv_cache_dtype = kv_cache_dtype
         self.calculate_kv_scales = calculate_kv_scales
-        self._k_scale = torch.tensor(1.0, dtype=torch.float32)
-        self._v_scale = torch.tensor(1.0, dtype=torch.float32)
+        self._k_scale = jnp.array(1.0, dtype=jnp.float32)
+        self._v_scale = jnp.array(1.0, dtype=jnp.float32)
         # FlashAttn doesn't support quantizing the kv-cache only
         # but requires q to be quantized as well.
-        self._q_scale = torch.tensor(1.0, dtype=torch.float32)
-        self._prob_scale = torch.tensor(1.0, dtype=torch.float32)
+        self._q_scale = jnp.array(1.0, dtype=jnp.float32)
+        self._prob_scale = jnp.array(1.0, dtype=jnp.float32)
 
         # We also keep the float32 versions of k/v_scale for attention
         # backends that don't support tensors (Flashinfer)
@@ -125,7 +128,7 @@ class Attention(nn.Module):
 
         # During model initialization, the default dtype is set as the model
         # weight and activation dtype.
-        dtype = torch.get_default_dtype()
+        dtype = jnp.float32
         attn_backend = get_attn_backend(head_size,
                                         dtype,
                                         kv_cache_dtype,
@@ -176,9 +179,10 @@ class Attention(nn.Module):
             ).parallel_config.pipeline_parallel_size)
         ]
 
-        self.q_range = torch.tensor(envs.Q_SCALE_CONSTANT, dtype=torch.float32)
-        self.k_range = torch.tensor(envs.K_SCALE_CONSTANT, dtype=torch.float32)
-        self.v_range = torch.tensor(envs.V_SCALE_CONSTANT, dtype=torch.float32)
+        self.q_range = jnp.array(envs.Q_SCALE_CONSTANT, dtype=jnp.float32)
+        self.k_range = jnp.array(envs.K_SCALE_CONSTANT, dtype=jnp.float32)
+        self.v_range = jnp.array(envs.V_SCALE_CONSTANT, dtype=jnp.float32)
+
 
     def forward(
         self,

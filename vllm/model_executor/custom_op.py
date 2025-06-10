@@ -2,6 +2,7 @@
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
 import torch.nn as nn
+from flax import nnx
 
 from vllm.config import get_current_vllm_config
 from vllm.logger import init_logger
@@ -10,14 +11,13 @@ from vllm.platforms import current_platform
 logger = init_logger(__name__)
 
 
-class CustomOp(nn.Module):
+class CustomOp(nnx.Module):
     """
     Base class for custom ops.
     Dispatches the forward method to the appropriate backend.
     """
 
     def __init__(self):
-        super().__init__()
         self._forward_method = self.dispatch_forward()
 
     def forward(self, *args, **kwargs):

@@ -6,6 +6,10 @@ from typing import Any, Optional
 
 import torch
 
+from flax import nnx
+import jax
+import jax.numpy as jnp
+
 
 def set_random_seed(seed: int) -> None:
     from vllm.platforms import current_platform
@@ -13,7 +17,7 @@ def set_random_seed(seed: int) -> None:
 
 
 def set_weight_attrs(
-    weight: torch.Tensor,
+    weight: jax.Array,
     weight_attrs: Optional[dict[str, Any]],
 ):
     """Set attributes on a weight tensor.
