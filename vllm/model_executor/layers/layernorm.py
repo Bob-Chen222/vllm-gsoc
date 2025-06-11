@@ -6,6 +6,10 @@ from typing import Optional, Union
 import torch
 import torch.nn as nn
 
+from flax import nnx
+import jax
+import jax.numpy as jnp
+
 import vllm.envs as envs
 from vllm.model_executor.custom_op import CustomOp
 from vllm.platforms import current_platform
@@ -110,11 +114,11 @@ class RMSNorm(CustomOp):
                                        else var_hidden_size)
         self.has_weight = has_weight
         if dtype is not None:
-            self.weight = torch.ones(hidden_size, dtype=dtype)
+            self.weight = jnp.ones(hidden_size, dtype=dtype)
         else:
-            self.weight = torch.ones(hidden_size)
+            self.weight = jnp.ones(hidden_size)
         if self.has_weight:
-            self.weight = nn.Parameter(self.weight)
+            self.weight = nnx.Parameter(self.weight)
 
     def forward_native(
         self,
@@ -219,6 +223,44 @@ class RMSNorm(CustomOp):
         s = f"hidden_size={self.weight.data.size(0)}"
         s += f", eps={self.variance_epsilon}"
         return s
+    
+    def __call__(
+        self,
+        x: jax.Array,
+        residual: Optional[jnp.Array] = None,
+    ) -> Union[jnp.Array, tuple[jnp.Array, jnp.Array]]:
+        """PyTorch-native implementation equivalent to forward()."""
+        orig_dtype = x.dtype
+        x = x.to(jax.float32)
+        if residual is not None:
+            x = x + residual.to(jax.float32)
+            residual = x.to(orig_dtype)
+
+        hidden_size = x.shape[-1]
+        if hidden_size != self.hidden_size:
+            raise ValueError("Expected hidden_size to be "
+                             f"{self.hidden_size}, but found: {hidden_size}")
+
+        if self.variance_size_override is None:
+            x_var = x
+        else:
+            if hidden_size < self.variance_size_override:
+                raise ValueError(
+                    "Expected hidden_size to be at least "
+                    f"{self.variance_size_override}, but found: {hidden_size}")
+
+            x_var = x[:, :, :self.variance_size_override]
+
+        variance = x_var.pow(2).mean(dim=-1, keepdim=True)
+
+        x = x * jnp.rsqrt(variance + self.variance_epsilon)
+        x = x.to(orig_dtype)
+        if self.has_weight:
+            x = x * self.weight
+        if residual is None:
+            return x
+        else:
+            return x, residual
 
 
 @CustomOp.register("gemma_rms_norm")

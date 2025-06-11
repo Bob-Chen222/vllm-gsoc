@@ -240,12 +240,12 @@ class Qwen2DecoderLayer(nnx.Module):
         self.post_attention_layernorm = RMSNorm(config.hidden_size,
                                                 eps=config.rms_norm_eps)
 
-    def forward(
+    def __call__(
         self,
-        positions: torch.Tensor,
-        hidden_states: torch.Tensor,
-        residual: Optional[torch.Tensor],
-    ) -> tuple[torch.Tensor, torch.Tensor]:
+        positions: jax.Array,
+        hidden_states: jax.Array,
+        residual: Optional[jax.Array],
+    ) -> tuple[jax.Array, jax.Array]:
         # Self Attention
         if residual is None:
             residual = hidden_states

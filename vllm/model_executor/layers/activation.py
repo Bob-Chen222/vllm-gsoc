@@ -8,6 +8,10 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from flax import nnx
+import jax
+import jax.numpy as jnp
+
 from vllm.distributed import (divide, get_tensor_model_parallel_rank,
                               get_tensor_model_parallel_world_size)
 from vllm.model_executor.custom_op import CustomOp
@@ -70,6 +74,8 @@ class SiluAndMul(CustomOp):
         elif current_platform.is_xpu():
             from vllm._ipex_ops import ipex_ops
             self.op = ipex_ops.silu_and_mul
+        elif current_platform.is_tpu():
+            self.op = lambda x: nnx.silu(x[..., :x.shape[-1] // 2]) * x[..., x.shape[-1] // 2:]
 
     def forward_native(self, x: torch.Tensor) -> torch.Tensor:
         """PyTorch-native implementation equivalent to forward()."""
@@ -96,6 +102,12 @@ class SiluAndMul(CustomOp):
         s = x_reshaped[:, :d] * F.sigmoid(x_reshaped[:, :d])
         result = s * x_reshaped[:, d:]
         return result.view(*x.shape[:-1], d)
+    
+    def __call__(self, x: torch.Tensor) -> torch.Tensor:
+        """Override __call__ to ensure the correct forward method is used."""
+        if current_platform.is_neuron():
+            return self.forward_neuron(x)
+        return super().__call__(x)
 
 
 @CustomOp.register("mul_and_silu")
