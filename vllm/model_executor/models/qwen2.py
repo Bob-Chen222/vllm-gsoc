@@ -61,7 +61,7 @@ from .utils import (AutoWeightsLoader, PPMissingLayer, extract_layer_index,
                     maybe_prefix)
 
 
-class Qwen2MLP(nn.Module):
+class Qwen2MLP(nnx.Module):
 
     def __init__(
         self,

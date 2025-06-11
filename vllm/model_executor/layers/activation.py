@@ -74,8 +74,6 @@ class SiluAndMul(CustomOp):
         elif current_platform.is_xpu():
             from vllm._ipex_ops import ipex_ops
             self.op = ipex_ops.silu_and_mul
-        elif current_platform.is_tpu():
-            self.op = lambda x: nnx.silu(x[..., :x.shape[-1] // 2]) * x[..., x.shape[-1] // 2:]
 
     def forward_native(self, x: torch.Tensor) -> torch.Tensor:
         """PyTorch-native implementation equivalent to forward()."""
@@ -103,11 +101,10 @@ class SiluAndMul(CustomOp):
         result = s * x_reshaped[:, d:]
         return result.view(*x.shape[:-1], d)
     
-    def __call__(self, x: torch.Tensor) -> torch.Tensor:
-        """Override __call__ to ensure the correct forward method is used."""
-        if current_platform.is_neuron():
-            return self.forward_neuron(x)
-        return super().__call__(x)
+    def __call__(self, x: jax.Array) -> jax.Array:
+        """PyTorch-native implementation equivalent to forward()."""
+        d = x.shape[-1] // 2
+        return nnx.silu(x[..., :d]) * x[..., d:]
 
 
 @CustomOp.register("mul_and_silu")
