@@ -136,7 +136,7 @@ class Qwen2Attention(nnx.Module):
         self.rope_theta = rope_theta
         self.dual_chunk_attention_config = dual_chunk_attention_config
 
-            
+
         self.qkv_proj = QKVParallelLinear(
             hidden_size,
             self.head_dim,
@@ -176,11 +176,11 @@ class Qwen2Attention(nnx.Module):
                 "dual_chunk_attention_config": dual_chunk_attention_config,
             } if dual_chunk_attention_config else {})
 
-    def forward(
+    def __call__(
         self,
-        positions: torch.Tensor,
-        hidden_states: torch.Tensor,
-    ) -> torch.Tensor:
+        positions: jax.Array,
+        hidden_states: jax.Array,
+    ) -> jax.Array:
         qkv, _ = self.qkv_proj(hidden_states)
         q, k, v = qkv.split([self.q_size, self.kv_size, self.kv_size], dim=-1)
         q, k = self.rotary_emb(positions, q, k)
