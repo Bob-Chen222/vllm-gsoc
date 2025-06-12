@@ -315,14 +315,20 @@ class Qwen2Model(nnx.Module):
 
         # Use the provided decoder layer type or default to Qwen2DecoderLayer
         decoder_layer_type = decoder_layer_type or Qwen2DecoderLayer
-        self.start_layer, self.end_layer, self.layers = make_layers(
-            config.num_hidden_layers,
-            lambda prefix: decoder_layer_type(config=config,
-                                              cache_config=cache_config,
-                                              quant_config=quant_config,
-                                              prefix=prefix),
-            prefix=f"{prefix}.layers",
-        )
+        # I think we can forget about making layers now
+        # self.start_layer, self.end_layer, self.layers = make_layers(
+        #     config.num_hidden_layers,
+        #     lambda prefix: decoder_layer_type(config=config,
+        #                                       cache_config=cache_config,
+        #                                       quant_config=quant_config,
+        #                                       prefix=prefix),
+        #     prefix=f"{prefix}.layers",
+        # )
+
+        @nnx.vmap(in_axes=0, out_axes=0)
+        def create_model()
+
+
 
         self.make_empty_intermediate_tensors = (
             make_empty_intermediate_tensors_factory(
@@ -448,15 +454,15 @@ class Qwen2ForCausalLM(nnx.Module):
         self.model = Qwen2Model(vllm_config=vllm_config,
                                 prefix=maybe_prefix(prefix, "model"))
 
-        # if get_pp_group().is_last_rank:
-        #     if config.tie_word_embeddings:
-        #         self.lm_head = self.model.embed_tokens
-        #     else:
-        #         self.lm_head = ParallelLMHead(config.vocab_size,
-        #                                       config.hidden_size,
-        #                                       quant_config=quant_config,
-        #                                       prefix=maybe_prefix(
-        #                                           prefix, "lm_head"))
+        if get_pp_group().is_last_rank:
+            if config.tie_word_embeddings:
+                self.lm_head = self.model.embed_tokens
+            else:
+                self.lm_head = ParallelLMHead(config.vocab_size,
+                                              config.hidden_size,
+                                              quant_config=quant_config,
+                                              prefix=maybe_prefix(
+                                                  prefix, "lm_head"))
         self.lm_head = PPMissingLayer()
 
         self.logits_processor = LogitsProcessor(config.vocab_size)
