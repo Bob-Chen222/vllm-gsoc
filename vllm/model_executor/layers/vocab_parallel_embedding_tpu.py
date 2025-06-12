@@ -9,6 +9,10 @@ import torch
 import torch.nn.functional as F
 from torch.nn.parameter import Parameter, UninitializedParameter
 
+from flax import nnx
+import jax
+import jax.numpy as jnp
+
 from vllm.distributed import (divide, get_tensor_model_parallel_rank,
                               get_tensor_model_parallel_world_size,
                               tensor_model_parallel_all_reduce)
@@ -259,14 +263,20 @@ class VocabParallelEmbedding(flax.nnx.Module):
         self.num_added_embeddings_per_partition = (
             self.shard_indices.added_vocab_end_index -
             self.shard_indices.added_vocab_start_index)
+        
+        self.weight = nnx.Param(jnp.empty(sum([self.num_embeddings_per_partition]),
+                                       self.embedding_dim,
+                                       dtype=params_dtype))
+        self.io_dim = {"input_dim": 1, "output_dim": 0}
 
-        self.quant_method.create_weights(self,
-                                         self.embedding_dim,
-                                         [self.num_embeddings_per_partition],
-                                         self.embedding_dim,
-                                         self.num_embeddings_padded,
-                                         params_dtype=params_dtype,
-                                         weight_loader=self.weight_loader)
+
+        # self.quant_method.create_weights(self,
+        #                                  self.embedding_dim,
+        #                                  [self.num_embeddings_per_partition],
+        #                                  self.embedding_dim,
+        #                                  self.num_embeddings_padded,
+        #                                  params_dtype=params_dtype,
+        #                                  weight_loader=self.weight_loader)
 
     @classmethod
     def _get_indices(cls, vocab_size_padded: int, org_vocab_size_padded: int,
