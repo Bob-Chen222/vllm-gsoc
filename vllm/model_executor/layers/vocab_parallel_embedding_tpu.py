@@ -355,16 +355,18 @@ class VocabParallelEmbedding(flax.nnx.Module):
         assert len(ret) == self.num_embeddings_padded
         return ret
 
-    def weight_loader(self, param: Parameter, loaded_weight: torch.Tensor):
+    def weight_loader(self, param: nnx.Parameter, loaded_weight: jax.Array):
         output_dim = getattr(param, "output_dim", None)
         packed_dim = getattr(param, "packed_dim", None)
 
         # If the parameter is a gguf weight, then load it directly.
         if getattr(param, "is_gguf_weight_type", None):
+            assert(False)
             param.data.copy_(loaded_weight)
             param.weight_type = loaded_weight.item()
             return
         elif isinstance(param, UninitializedParameter):
+            assert(False)
             shape = list(loaded_weight.shape)
             if output_dim is not None:
                 shape[output_dim] = self.num_embeddings_per_partition
@@ -373,6 +375,7 @@ class VocabParallelEmbedding(flax.nnx.Module):
         # If parameter does not have output dim, then it should
         # be copied onto all gpus (e.g. g_idx for act_order gptq).
         if output_dim is None:
+            assert(False)
             assert param.data.shape == loaded_weight.shape
             param.data.copy_(loaded_weight)
             return
@@ -384,6 +387,7 @@ class VocabParallelEmbedding(flax.nnx.Module):
         # If param packed on the same dim we are sharding on, then
         # need to adjust offsets of loaded weight by pack_factor.
         if packed_dim is not None and packed_dim == output_dim:
+            assert(False)
             packed_factor = param.packed_factor if isinstance(
                 param, BasevLLMParameter) else param.pack_factor
             assert loaded_weight.shape[output_dim] == (self.org_vocab_size //
@@ -394,21 +398,18 @@ class VocabParallelEmbedding(flax.nnx.Module):
             assert loaded_weight.shape[output_dim] == self.org_vocab_size
 
         # Copy the data. Select chunk corresponding to current shard.
-        loaded_weight = loaded_weight.narrow(output_dim, start_idx, shard_size)
+        indices = jnp.arange(start_idx, start_idx + shard_size)
+        shard = jnp.take(loaded_weight, indices, axis=output_dim)
 
-        if current_platform.is_hpu():
-            # FIXME(kzawora): Weight copy with slicing bugs out on Gaudi here,
-            # so we're using a workaround. Remove this when fixed in
-            # HPU PT bridge.
-            padded_weight = torch.cat([
-                loaded_weight,
-                torch.zeros(param.shape[0] - loaded_weight.shape[0],
-                            *loaded_weight.shape[1:])
-            ])
-            param.data.copy_(padded_weight)
-        else:
-            param[:loaded_weight.shape[0]].data.copy_(loaded_weight)
-            param[loaded_weight.shape[0]:].data.fill_(0)
+        # Zero pad if needed
+        pad_len = param.value.shape[output_dim] - shard.shape[output_dim]
+        if pad_len > 0:
+            pad_width = [(0, 0)] * shard.ndim
+            pad_width[output_dim] = (0, pad_len)
+            shard = jnp.pad(shard, pad_width)
+
+        # Assign to param.value
+        param.value = shard
 
     def forward(self, input_):
         if self.tp_size > 1:
