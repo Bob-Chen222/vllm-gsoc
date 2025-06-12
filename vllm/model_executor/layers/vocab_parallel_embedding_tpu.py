@@ -34,6 +34,7 @@ class UnquantizedEmbeddingMethod(QuantizeMethodBase):
                        output_partition_sizes: list[int], input_size: int,
                        output_size: int, params_dtype: torch.dtype,
                        **extra_weight_attrs):
+        assert(False)
         """Create weights for embedding layer."""
         weight = Parameter(torch.empty(sum(output_partition_sizes),
                                        input_size_per_partition,
@@ -49,9 +50,9 @@ class UnquantizedEmbeddingMethod(QuantizeMethodBase):
               bias: Optional[torch.Tensor] = None) -> torch.Tensor:
         return dispatch_unquantized_gemm()(x, layer.weight, bias)
 
-    def embedding(self, layer: torch.nn.Module,
-                  input_: torch.Tensor) -> torch.Tensor:
-        return F.embedding(input_, layer.weight)
+    def embedding(self, layer: flax.nnx.Module,
+                  input_: jax.Array) -> jax.Array:
+        return layer.weight.value[input_]
 
 
 def pad_vocab_size(vocab_size: int,
@@ -413,6 +414,7 @@ class VocabParallelEmbedding(flax.nnx.Module):
     def forward(self, input_):
         if self.tp_size > 1:
             # Build the mask.
+            assert(False)
             masked_input, input_mask = get_masked_input_and_mask(
                 input_, self.shard_indices.org_vocab_start_index,
                 self.shard_indices.org_vocab_end_index,
@@ -426,6 +428,7 @@ class VocabParallelEmbedding(flax.nnx.Module):
                                                       masked_input.long())
         # Mask the output embedding.
         if self.tp_size > 1:
+            assert(False)
             output_parallel.masked_fill_(input_mask.unsqueeze(-1), 0)
         # Reduce across all the model parallel GPUs.
         output = tensor_model_parallel_all_reduce(output_parallel)

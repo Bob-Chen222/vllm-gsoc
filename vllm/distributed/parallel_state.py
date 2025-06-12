@@ -37,6 +37,10 @@ import torch
 import torch.distributed
 from torch.distributed import Backend, ProcessGroup
 
+from flax.experimental import nnx
+import jax
+import jax.numpy as jnp
+
 import vllm.envs as envs
 from vllm.distributed.device_communicators.base_device_communicator import (
     DeviceCommunicatorBase)
@@ -333,7 +337,7 @@ class GroupCoordinator:
         with torch.cuda.stream(stream), maybe_ca_context:
             yield graph_capture_context
 
-    def all_reduce(self, input_: torch.Tensor) -> torch.Tensor:
+    def all_reduce(self, input_: jax.Array) -> jax.Array:
         """
         User-facing all-reduce function before we actually call the
         all-reduce operation.
@@ -352,6 +356,7 @@ class GroupCoordinator:
         if self.world_size == 1:
             return input_
 
+        assert(False)
         if self.use_custom_op_call:
             return torch.ops.vllm.all_reduce(input_,
                                              group_name=self.unique_name)
