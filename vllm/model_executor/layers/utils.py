@@ -4,6 +4,9 @@
 from typing import Callable, Optional
 
 import torch
+from flax import nnx
+import jax
+import jax.numpy as jnp
 
 from vllm import _custom_ops as ops
 from vllm import envs
@@ -93,3 +96,7 @@ def dispatch_unquantized_gemm() -> Callable[..., torch.Tensor]:
     if current_platform.is_rocm():
         return rocm_unquantized_gemm
     return torch.nn.functional.linear
+
+def dispatch_unquantized_gemm_tpu() -> Callable[..., jax.Array]:
+    assert current_platform.is_tpu()
+    return nnx.linear

@@ -8,6 +8,10 @@ from contextlib import contextmanager
 from dataclasses import dataclass, field
 from typing import Optional
 
+from flax import nnx
+import jax
+import jax.numpy as jnp
+
 import torch
 import transformers
 from torch import nn
