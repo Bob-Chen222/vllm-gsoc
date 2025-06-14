@@ -470,7 +470,7 @@ class ParallelLMHead(VocabParallelEmbedding):
                  prefix: str = ""):
         super().__init__(num_embeddings, embedding_dim, params_dtype,
                          org_num_embeddings, padding_size, quant_config,
-                         prefix)
+                         prefix )
         self.quant_config = quant_config
         if bias:
             self.bias = Parameter(
