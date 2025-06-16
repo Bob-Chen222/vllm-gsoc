@@ -50,7 +50,7 @@ class UnquantizedEmbeddingMethod(QuantizeMethodBase):
               bias: Optional[torch.Tensor] = None) -> torch.Tensor:
         return dispatch_unquantized_gemm()(x, layer.weight, bias)
 
-    def embedding(self, layer: flax.nnx.Module,
+    def embedding(self, layer: nnx.Module,
                   input_: jax.Array) -> jax.Array:
         return layer.weight.value[input_]
 
@@ -163,7 +163,7 @@ def get_masked_input_and_mask(
     return input_, ~vocab_mask
 
 
-class VocabParallelEmbedding(flax.nnx.Module):
+class VocabParallelEmbedding(nnx.Module):
     """Embedding parallelized in the vocabulary dimension.
 
     Adapted from torch.nn.Embedding, note that we pad the vocabulary size to
@@ -355,7 +355,7 @@ class VocabParallelEmbedding(flax.nnx.Module):
         assert len(ret) == self.num_embeddings_padded
         return ret
 
-    def weight_loader(self, param: nnx.Parameter, loaded_weight: jax.Array):
+    def weight_loader(self, param: nnx.Param[jax.Array], loaded_weight: jax.Array):
         output_dim = getattr(param, "output_dim", None)
         packed_dim = getattr(param, "packed_dim", None)
 
