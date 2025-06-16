@@ -213,8 +213,9 @@ class VocabParallelEmbedding(nnx.Module):
         super().__init__()
 
         # Keep the input dimensions.
-        tp_rank = get_tensor_model_parallel_rank()
-        self.tp_size = get_tensor_model_parallel_world_size()
+        # TODO: (Bob) it is hard coded for now but should be changed later
+        tp_rank = 0
+        self.tp_size = 1
         self.num_embeddings = num_embeddings
         self.padding_size = padding_size
         self.org_vocab_size = org_num_embeddings or num_embeddings
@@ -250,7 +251,7 @@ class VocabParallelEmbedding(nnx.Module):
         self.quant_method: QuantizeMethodBase = quant_method
 
         if params_dtype is None:
-            params_dtype = torch.get_default_dtype()
+            params_dtype = jnp.float32
         # Divide the weight matrix along the vocaburaly dimension.
         self.num_added_embeddings = self.num_embeddings - self.org_vocab_size
         self.num_embeddings_per_partition = divide(self.num_embeddings_padded,
@@ -264,9 +265,7 @@ class VocabParallelEmbedding(nnx.Module):
             self.shard_indices.added_vocab_end_index -
             self.shard_indices.added_vocab_start_index)
         
-        self.weight = nnx.Param(jnp.empty(sum([self.num_embeddings_per_partition]),
-                                       self.embedding_dim,
-                                       dtype=params_dtype))
+        self.weight = nnx.Param(jnp.empty((self.num_embeddings_per_partition, self.embedding_dim), dtype=params_dtype))
         self.io_dim = {"input_dim": 1, "output_dim": 0}
 
 

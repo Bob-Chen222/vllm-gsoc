@@ -26,6 +26,8 @@ def patch_distributed():
     vllm.distributed.get_tensor_model_parallel_rank = get_tensor_model_parallel_rank
     vllm.distributed.get_tensor_model_parallel_world_size = get_tensor_model_parallel_world_size
 
+    
+
 def test_vocab_parallel_embedding_init():
     """Test initialization of VocabParallelEmbedding with different configurations."""
     # Test case 1: Basic initialization
