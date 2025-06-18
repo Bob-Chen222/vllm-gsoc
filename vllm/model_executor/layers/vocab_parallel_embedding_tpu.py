@@ -269,13 +269,13 @@ class VocabParallelEmbedding(nnx.Module):
         self.io_dim = {"input_dim": 1, "output_dim": 0}
 
 
-        self.quant_method.create_weights(self,
-                                         self.embedding_dim,
-                                         [self.num_embeddings_per_partition],
-                                         self.embedding_dim,
-                                         self.num_embeddings_padded,
-                                         params_dtype=params_dtype,
-                                         weight_loader=self.weight_loader)
+        # self.quant_method.create_weights(self,
+        #                                  self.embedding_dim,
+        #                                  [self.num_embeddings_per_partition],
+        #                                  self.embedding_dim,
+        #                                  self.num_embeddings_padded,
+        #                                  params_dtype=params_dtype,
+        #                                  weight_loader=self.weight_loader)
 
     @classmethod
     def _get_indices(cls, vocab_size_padded: int, org_vocab_size_padded: int,
@@ -355,7 +355,7 @@ class VocabParallelEmbedding(nnx.Module):
         return ret
 
     def weight_loader(self, param: nnx.Param[jax.Array], loaded_weight: jax.Array):
-        output_dim = getattr(param, "output_dim", None)
+        output_dim = getattr(param, "output_dim", 0) # Bob: hard coded for now
         packed_dim = getattr(param, "packed_dim", None)
 
         # If the parameter is a gguf weight, then load it directly.
@@ -395,6 +395,9 @@ class VocabParallelEmbedding(nnx.Module):
             start_idx = start_idx // packed_factor
             shard_size = shard_size // packed_factor
         else:
+            if loaded_weight.shape[output_dim] != self.org_vocab_size:
+                print(f"Loaded weight shape: {loaded_weight.shape}, "
+                        f"expected shape: {self.org_vocab_size}")
             assert loaded_weight.shape[output_dim] == self.org_vocab_size
 
         # Copy the data. Select chunk corresponding to current shard.
