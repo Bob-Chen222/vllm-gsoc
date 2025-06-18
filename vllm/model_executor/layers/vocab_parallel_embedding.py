@@ -9,6 +9,10 @@ import torch
 import torch.nn.functional as F
 from torch.nn.parameter import Parameter, UninitializedParameter
 
+from flax import nnx
+import jax
+import jax.numpy as jnp
+
 from vllm.distributed import (divide, get_tensor_model_parallel_rank,
                               get_tensor_model_parallel_world_size,
                               tensor_model_parallel_all_reduce)
@@ -423,6 +427,14 @@ class VocabParallelEmbedding(torch.nn.Module):
         # Reduce across all the model parallel GPUs.
         output = tensor_model_parallel_all_reduce(output_parallel)
         return output
+    
+    def __call__(self, input_):
+        # NOTE: (Bob): this function now only supports sequential inference
+        input = input_.astype(jnp.int64)
+        output_parallel = self.quant_method.embedding(self,
+                                                      input)
+        return output_parallel
+
 
     def extra_repr(self) -> str:
         s = f"num_embeddings={self.num_embeddings_per_partition}"
