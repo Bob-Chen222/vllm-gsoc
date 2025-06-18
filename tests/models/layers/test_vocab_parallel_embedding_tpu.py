@@ -4,7 +4,9 @@ import jax.numpy as jnp
 import numpy as np
 from flax import nnx
 from vllm.model_executor.layers.vocab_parallel_embedding_tpu import (
-    VocabParallelEmbedding, UnquantizedEmbeddingMethod)
+    VocabParallelEmbedding as VocabParallelEmbeddingJAX, UnquantizedEmbeddingMethod)
+from vllm.model_executor.layers.vocab_parallel_embedding import (
+    VocabParallelEmbedding as VocabParallelEmbeddingPT)
 from vllm.distributed import (get_tensor_model_parallel_rank,
                             get_tensor_model_parallel_world_size)
 
@@ -26,12 +28,51 @@ def patch_distributed():
     vllm.distributed.get_tensor_model_parallel_rank = get_tensor_model_parallel_rank
     vllm.distributed.get_tensor_model_parallel_world_size = get_tensor_model_parallel_world_size
 
-    
+# === TESTS FOR BOTH IMPLEMENTATIONS ===
+
+@pytest.mark.parametrize("input_ids", [
+    jnp.array([0, 1, 2, 3], dtype=jnp.int32),
+    jnp.array([0, 999, 1000, 1001], dtype=jnp.int32),
+    jnp.array([999], dtype=jnp.int32),
+    jnp.array([-1, 0], dtype=jnp.int32),
+    jnp.array([], dtype=jnp.int32),
+    jnp.array([[0, 1], [2, 3]], dtype=jnp.int32),
+    jnp.array([5, 5, 5, 5], dtype=jnp.int32),
+])
+def test_jax_vs_pt_embedding_outputs_match(input_ids):
+    num_embeddings = 1000
+    embedding_dim = 512
+
+    # Initialize the same weights for both
+    weight = jnp.arange(num_embeddings * embedding_dim, dtype=jnp.float32).reshape((num_embeddings, embedding_dim))
+
+    # PT version
+    embedding_pt = VocabParallelEmbeddingPT(
+        num_embeddings=num_embeddings,
+        embedding_dim=embedding_dim,
+        params_dtype=jnp.float32
+    )
+    embedding_pt.weight_loader(embedding_pt.weight, weight)
+
+    # JAX version
+    embedding_jax = VocabParallelEmbeddingJAX(
+        num_embeddings=num_embeddings,
+        embedding_dim=embedding_dim,
+        params_dtype=jnp.float32
+    )
+    embedding_jax.weight_loader(embedding_jax.weight, weight)
+
+    pt_out = embedding_pt(input_ids)
+    jax_out = embedding_jax(input_ids)
+
+    assert pt_out.shape == jax_out.shape, "Oujaxt shapes differ"
+    assert jnp.allclose(pt_out, jax_out, atol=1e-5), "Outputs mismatch between PT and JAX embedding"
+
+# === YOUR ORIGINAL TESTS BELOW (UNCHANGED) ===
 
 def test_vocab_parallel_embedding_init():
     """Test initialization of VocabParallelEmbedding with different configurations."""
-    # Test case 1: Basic initialization
-    embedding = VocabParallelEmbedding(
+    embedding = VocabParallelEmbeddingJAX(
         num_embeddings=1000,
         embedding_dim=512,
         params_dtype=jnp.float32
@@ -43,9 +84,8 @@ def test_vocab_parallel_embedding_init():
     assert embedding.num_embeddings_padded == 1024  # Padded to multiple of 64
     assert embedding.num_embeddings_per_partition == 1024
 
-    # Test case 2: With LoRA (org_num_embeddings < num_embeddings)
-    embedding = VocabParallelEmbedding(
-        num_embeddings=1050,  # Original + 50 LoRA tokens
+    embedding = VocabParallelEmbeddingJAX(
+        num_embeddings=1050,
         embedding_dim=512,
         org_num_embeddings=1000,
         params_dtype=jnp.float32
@@ -55,8 +95,7 @@ def test_vocab_parallel_embedding_init():
     assert embedding.num_added_embeddings == 50
     assert embedding.num_embeddings_padded == 1088  # Padded to multiple of 64
 
-    # Test case 3: With custom padding size
-    embedding = VocabParallelEmbedding(
+    embedding = VocabParallelEmbeddingJAX(
         num_embeddings=1000,
         embedding_dim=512,
         padding_size=128,
@@ -66,46 +105,33 @@ def test_vocab_parallel_embedding_init():
 
 def test_vocab_parallel_embedding_weight_loader():
     """Test weight loading functionality."""
-    embedding = VocabParallelEmbedding(
+    embedding = VocabParallelEmbeddingJAX(
         num_embeddings=1000,
         embedding_dim=512,
         params_dtype=jnp.float32
     )
-    
-    # Create a dummy weight tensor
     weight = jnp.ones((1000, 512), dtype=jnp.float32)
-    
-    # Test weight loading
     embedding.weight_loader(embedding.weight, weight)
-    
-    # Verify the loaded weights
-    assert embedding.weight.value.shape == (1024, 512)  # Padded shape
-    assert jnp.all(embedding.weight.value[:1000] == 1.0)  # Original weights
-    assert jnp.all(embedding.weight.value[1000:] == 0.0)  # Padding should be zeros
+    assert embedding.weight.value.shape == (1024, 512)
+    assert jnp.all(embedding.weight.value[:1000] == 1.0)
+    assert jnp.all(embedding.weight.value[1000:] == 0.0)
 
 def test_vocab_parallel_embedding_forward():
     """Test forward pass of VocabParallelEmbedding."""
-    embedding = VocabParallelEmbedding(
+    embedding = VocabParallelEmbeddingJAX(
         num_embeddings=1000,
         embedding_dim=512,
         params_dtype=jnp.float32
     )
-    
-    # Initialize weights with known values
     weight = jnp.ones((1000, 512), dtype=jnp.float32)
     embedding.weight_loader(embedding.weight, weight)
-    
-    # Test case 1: Basic forward pass
     input_ids = jnp.array([0, 1, 2, 3], dtype=jnp.int32)
     output = embedding(input_ids)
     assert output.shape == (4, 512)
-    assert jnp.all(output == 1.0)  # Since weights are all ones
-    
-    # Test case 2: With out-of-vocab indices
+    assert jnp.all(output == 1.0)
     input_ids = jnp.array([0, 999, 1000, 1001], dtype=jnp.int32)
     output = embedding(input_ids)
     assert output.shape == (4, 512)
-    # First two indices should have ones, last two should be zeros (out of vocab)
     assert jnp.all(output[0] == 1.0)
     assert jnp.all(output[1] == 1.0)
     assert jnp.all(output[2] == 0.0)
@@ -113,13 +139,11 @@ def test_vocab_parallel_embedding_forward():
 
 def test_vocab_parallel_embedding_shard_indices():
     """Test shard indices calculation."""
-    embedding = VocabParallelEmbedding(
+    embedding = VocabParallelEmbeddingJAX(
         num_embeddings=1000,
         embedding_dim=512,
         params_dtype=jnp.float32
     )
-    
-    # Verify shard indices
     indices = embedding.shard_indices
     assert indices.org_vocab_start_index == 0
     assert indices.org_vocab_end_index == 1000
@@ -128,3 +152,80 @@ def test_vocab_parallel_embedding_shard_indices():
     assert indices.num_org_elements == 1000
     assert indices.num_org_elements_padded == 1024
     assert indices.num_org_vocab_padding == 24  # 1024 - 1000 
+
+def test_forward_empty_input():
+    embedding = VocabParallelEmbeddingJAX(
+        num_embeddings=1000,
+        embedding_dim=512,
+        params_dtype=jnp.float32
+    )
+    weight = jnp.ones((1000, 512), dtype=jnp.float32)
+    embedding.weight_loader(embedding.weight, weight)
+    input_ids = jnp.array([], dtype=jnp.int32)
+    output = embedding(input_ids)
+    assert output.shape == (0, 512)
+
+def test_forward_batched_input():
+    embedding = VocabParallelEmbeddingJAX(
+        num_embeddings=1000,
+        embedding_dim=512,
+        params_dtype=jnp.float32
+    )
+    weight = jnp.ones((1000, 512), dtype=jnp.float32)
+    embedding.weight_loader(embedding.weight, weight)
+    input_ids = jnp.array([[0, 1], [2, 3]], dtype=jnp.int32)
+    output = embedding(input_ids)
+    assert output.shape == (2, 2, 512)
+    assert jnp.all(output == 1.0)
+
+def test_forward_max_index():
+    embedding = VocabParallelEmbeddingJAX(
+        num_embeddings=1000,
+        embedding_dim=512,
+        params_dtype=jnp.float32
+    )
+    weight = jnp.ones((1000, 512), dtype=jnp.float32)
+    embedding.weight_loader(embedding.weight, weight)
+    input_ids = jnp.array([999], dtype=jnp.int32)
+    output = embedding(input_ids)
+    assert output.shape == (1, 512)
+    assert jnp.all(output == 1.0)
+
+def test_forward_negative_indices():
+    embedding = VocabParallelEmbeddingJAX(
+        num_embeddings=1000,
+        embedding_dim=512,
+        params_dtype=jnp.float32
+    )
+    weight = jnp.ones((1000, 512), dtype=jnp.float32)
+    embedding.weight_loader(embedding.weight, weight)
+    input_ids = jnp.array([-1, 0], dtype=jnp.int32)
+    output = embedding(input_ids)
+    assert output.shape == (2, 512)
+    assert jnp.all(output[0] == 0.0)
+    assert jnp.all(output[1] == 1.0)
+
+def test_forward_invalid_dtype():
+    embedding = VocabParallelEmbeddingJAX(
+        num_embeddings=1000,
+        embedding_dim=512,
+        params_dtype=jnp.float32
+    )
+    weight = jnp.ones((1000, 512), dtype=jnp.float32)
+    embedding.weight_loader(embedding.weight, weight)
+    input_ids = jnp.array([0, 1, 2], dtype=jnp.float32)
+    with pytest.raises(TypeError):
+        _ = embedding(input_ids)
+
+def test_forward_repeated_ids():
+    embedding = VocabParallelEmbeddingJAX(
+        num_embeddings=1000,
+        embedding_dim=512,
+        params_dtype=jnp.float32
+    )
+    weight = jnp.ones((1000, 512), dtype=jnp.float32)
+    embedding.weight_loader(embedding.weight, weight)
+    input_ids = jnp.array([5, 5, 5, 5], dtype=jnp.int32)
+    output = embedding(input_ids)
+    assert output.shape == (4, 512)
+    assert jnp.all(output == 1.0)
