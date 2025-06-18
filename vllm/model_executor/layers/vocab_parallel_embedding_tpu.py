@@ -52,6 +52,11 @@ class UnquantizedEmbeddingMethod(QuantizeMethodBase):
 
     def embedding(self, layer: nnx.Module,
                   input_: jax.Array) -> jax.Array:
+        # check the fact that there shouldn't be negative values in the input_
+        if jnp.any(input_ < 0):
+            raise ValueError(
+                "Input to VocabParallelEmbedding should not contain negative values."
+            )
         return layer.weight.value[input_]
 
 

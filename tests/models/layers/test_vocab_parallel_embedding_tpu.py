@@ -1,72 +1,55 @@
 import pytest
-import jax
-import jax.numpy as jnp
 import numpy as np
-from flax import nnx
-from vllm.model_executor.layers.vocab_parallel_embedding_tpu import (
-    VocabParallelEmbedding as VocabParallelEmbeddingJAX, UnquantizedEmbeddingMethod)
-from vllm.model_executor.layers.vocab_parallel_embedding import (
-    VocabParallelEmbedding as VocabParallelEmbeddingPT)
-from vllm.distributed import (get_tensor_model_parallel_rank,
-                            get_tensor_model_parallel_world_size)
+import torch
+import jax.numpy as jnp
 
-# Mock the distributed functions
-def mock_get_tensor_model_parallel_rank():
-    return 0
+from vllm.model_executor.layers.vocab_parallel_embedding import VocabParallelEmbedding as VocabParallelEmbeddingTorch
+from vllm.model_executor.layers.vocab_parallel_embedding_tpu import VocabParallelEmbedding as VocabParallelEmbeddingJAX
 
-def mock_get_tensor_model_parallel_world_size():
-    return 1
-
-# Fixture to patch the distributed functions
-@pytest.fixture(autouse=True)
-def patch_distributed():
-    import vllm.distributed
-    vllm.distributed.get_tensor_model_parallel_rank = mock_get_tensor_model_parallel_rank
-    vllm.distributed.get_tensor_model_parallel_world_size = mock_get_tensor_model_parallel_world_size
-    yield
-    # Restore original functions after test
-    vllm.distributed.get_tensor_model_parallel_rank = get_tensor_model_parallel_rank
-    vllm.distributed.get_tensor_model_parallel_world_size = get_tensor_model_parallel_world_size
-
-# === TESTS FOR BOTH IMPLEMENTATIONS ===
-
-@pytest.mark.parametrize("input_ids", [
-    jnp.array([0, 1, 2, 3], dtype=jnp.int32),
-    jnp.array([0, 999, 1000, 1001], dtype=jnp.int32),
-    jnp.array([999], dtype=jnp.int32),
-    jnp.array([-1, 0], dtype=jnp.int32),
-    jnp.array([], dtype=jnp.int32),
-    jnp.array([[0, 1], [2, 3]], dtype=jnp.int32),
-    jnp.array([5, 5, 5, 5], dtype=jnp.int32),
+@pytest.mark.parametrize("input_ids_np", [
+    np.array([0, 1, 2, 3], dtype=np.int32),
+    np.array([0, 999, 1000, 1001], dtype=np.int32),
+    np.array([999], dtype=np.int32),
+    np.array([-1, 0], dtype=np.int32),
+    np.array([], dtype=np.int32),
+    np.array([[0, 1], [2, 3]], dtype=np.int32),
+    np.array([5, 5, 5, 5], dtype=np.int32),
 ])
-def test_jax_vs_pt_embedding_outputs_match(input_ids):
+def test_torch_vs_jax_embedding_outputs_match(input_ids_np):
     num_embeddings = 1000
-    embedding_dim = 512
+    embedding_dim = 128
 
     # Initialize the same weights for both
-    weight = jnp.arange(num_embeddings * embedding_dim, dtype=jnp.float32).reshape((num_embeddings, embedding_dim))
+    weight_np = np.arange(num_embeddings * embedding_dim, dtype=np.float32).reshape((num_embeddings, embedding_dim))
 
-    # PT version
-    embedding_pt = VocabParallelEmbeddingPT(
+    # Torch (PyTorch) version
+    torch_embedding = VocabParallelEmbeddingTorch(
         num_embeddings=num_embeddings,
         embedding_dim=embedding_dim,
-        params_dtype=jnp.float32
+        params_dtype=torch.float32
     )
-    embedding_pt.weight_loader(embedding_pt.weight, weight)
+    torch_weight = torch.from_numpy(weight_np)
+    torch_embedding.weight_loader(torch_embedding.weight, torch_weight)
 
     # JAX version
-    embedding_jax = VocabParallelEmbeddingJAX(
+    jax_embedding = VocabParallelEmbeddingJAX(
         num_embeddings=num_embeddings,
         embedding_dim=embedding_dim,
         params_dtype=jnp.float32
     )
-    embedding_jax.weight_loader(embedding_jax.weight, weight)
+    jax_weight = jnp.array(weight_np)
+    jax_embedding.weight_loader(jax_embedding.weight, jax_weight)
 
-    pt_out = embedding_pt(input_ids)
-    jax_out = embedding_jax(input_ids)
+    # Prepare inputs for each framework
+    torch_input = torch.from_numpy(input_ids_np)
+    jax_input = jnp.array(input_ids_np)
 
-    assert pt_out.shape == jax_out.shape, "Oujaxt shapes differ"
-    assert jnp.allclose(pt_out, jax_out, atol=1e-5), "Outputs mismatch between PT and JAX embedding"
+    torch_out = torch_embedding(torch_input).detach().cpu().numpy()
+    jax_out = np.array(jax_embedding(jax_input))
+
+    assert torch_out.shape == jax_out.shape, "Shape mismatch"
+    assert np.allclose(torch_out, jax_out, atol=1e-5), "Mismatch between PyTorch and JAX embedding outputs"
+
 
 # === YOUR ORIGINAL TESTS BELOW (UNCHANGED) ===
 
