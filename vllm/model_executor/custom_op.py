@@ -2,6 +2,9 @@
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
 import torch.nn as nn
+from flax import nnx
+import jax
+import jax.numpy as jnp
 
 from vllm.config import get_current_vllm_config
 from vllm.logger import init_logger
