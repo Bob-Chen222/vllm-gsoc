@@ -269,13 +269,13 @@ class VocabParallelEmbedding(nnx.Module):
         self.io_dim = {"input_dim": 1, "output_dim": 0}
 
 
-        # self.quant_method.create_weights(self,
-        #                                  self.embedding_dim,
-        #                                  [self.num_embeddings_per_partition],
-        #                                  self.embedding_dim,
-        #                                  self.num_embeddings_padded,
-        #                                  params_dtype=params_dtype,
-        #                                  weight_loader=self.weight_loader)
+        self.quant_method.create_weights(self,
+                                         self.embedding_dim,
+                                         [self.num_embeddings_per_partition],
+                                         self.embedding_dim,
+                                         self.num_embeddings_padded,
+                                         params_dtype=params_dtype,
+                                         weight_loader=self.weight_loader)
 
     @classmethod
     def _get_indices(cls, vocab_size_padded: int, org_vocab_size_padded: int,
@@ -374,6 +374,7 @@ class VocabParallelEmbedding(nnx.Module):
         # If parameter does not have output dim, then it should
         # be copied onto all gpus (e.g. g_idx for act_order gptq).
         if output_dim is None:
+            print("output_dim", output_dim)
             assert(False)
             assert param.data.shape == loaded_weight.shape
             param.data.copy_(loaded_weight)
