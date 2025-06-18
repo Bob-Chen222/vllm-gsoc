@@ -436,6 +436,12 @@ class VocabParallelEmbedding(nnx.Module):
         # Reduce across all the model parallel GPUs.
         output = tensor_model_parallel_all_reduce(output_parallel)
         return output
+    
+    def __call__(self, input_):
+        # NOTE: (Bob): this function now only supports sequential inference
+        output_parallel = self.quant_method.embedding(self,
+                                                      input)
+        return output_parallel
 
     def extra_repr(self) -> str:
         s = f"num_embeddings={self.num_embeddings_per_partition}"

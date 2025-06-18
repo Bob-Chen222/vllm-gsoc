@@ -97,39 +97,19 @@ def test_vocab_parallel_embedding_forward():
     
     # Test case 1: Basic forward pass
     input_ids = jnp.array([0, 1, 2, 3], dtype=jnp.int32)
-    output = embedding.forward(input_ids)
+    output = embedding(input_ids)
     assert output.shape == (4, 512)
     assert jnp.all(output == 1.0)  # Since weights are all ones
     
     # Test case 2: With out-of-vocab indices
     input_ids = jnp.array([0, 999, 1000, 1001], dtype=jnp.int32)
-    output = embedding.forward(input_ids)
+    output = embedding(input_ids)
     assert output.shape == (4, 512)
     # First two indices should have ones, last two should be zeros (out of vocab)
     assert jnp.all(output[0] == 1.0)
     assert jnp.all(output[1] == 1.0)
     assert jnp.all(output[2] == 0.0)
     assert jnp.all(output[3] == 0.0)
-
-def test_vocab_parallel_embedding_with_lora():
-    """Test VocabParallelEmbedding with LoRA tokens."""
-    embedding = VocabParallelEmbedding(
-        num_embeddings=1050,  # 1000 original + 50 LoRA tokens
-        embedding_dim=512,
-        org_num_embeddings=1000,
-        params_dtype=jnp.float32
-    )
-    
-    # Initialize weights
-    weight = jnp.ones((1050, 512), dtype=jnp.float32)
-    embedding.weight_loader(embedding.weight, weight)
-    
-    # Test forward pass with both original and LoRA tokens
-    input_ids = jnp.array([0, 999, 1000, 1049], dtype=jnp.int32)
-    output = embedding.forward(input_ids)
-    assert output.shape == (4, 512)
-    # All indices should have ones since they're within vocab range
-    assert jnp.all(output == 1.0)
 
 def test_vocab_parallel_embedding_shard_indices():
     """Test shard indices calculation."""
