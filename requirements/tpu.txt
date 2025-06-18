@@ -6,6 +6,8 @@ cmake>=3.26.1
 packaging>=24.2
 setuptools-scm>=8
 wheel
+flax
+pytest
 jinja2>=3.1.6
 ray[default]
 ray[data]
