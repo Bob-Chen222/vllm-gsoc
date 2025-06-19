@@ -186,29 +186,28 @@ class LinearMethodBase(QuantizeMethodBase):
 class UnquantizedLinearMethod(LinearMethodBase):
     """Linear method without quantization."""
 
-    def create_weights(self, layer: torch.nn.Module,
+    def create_weights(self, layer: nnx.Module,
                        input_size_per_partition: int,
                        output_partition_sizes: list[int], input_size: int,
                        output_size: int, params_dtype: torch.dtype,
                        **extra_weight_attrs):
-        self.weight = nnx.Param(jnp.empty(sum(output_partition_sizes),
-                                       input_size_per_partition,
-                                       dtype=params_dtype),
-                           requires_grad=False)
+        layer.weight = nnx.Param(
+                jnp.empty((sum(output_partition_sizes), input_size_per_partition), dtype=params_dtype)
+                )
+
         self.io_dim = {"input_dim": 1, "output_dim": 0}
         # set_weight_attrs(weight, {"input_dim": 1, "output_dim": 0})
         # layer.register_parameter("weight", weight)
         # set_weight_attrs(weight, extra_weight_attrs)
 
     def apply(self,
-              layer: torch.nn.Module,
-              x: torch.Tensor,
-              bias: Optional[torch.Tensor] = None) -> torch.Tensor:
+              layer: nnx.Module,
+              x: jax.Array,
+              bias: Optional[jax.Array] = None) -> jax.Array:
 
-        return dispatch_unquantized_gemm()(x, layer.weight, bias)
+        return x @ layer.weight.value.T + (bias if bias is not None else 0)
 
-
-class LinearBase(flax.nnx.Module):
+class LinearBase(nnx.Module):
     """Base linear layer.
 
     Args:
@@ -424,6 +423,8 @@ class ColumnParallelLinear(LinearBase):
             weight_loader=(
                 self.weight_loader_v2 if self.quant_method.__class__.__name__
                 in WEIGHT_LOADER_V2_SUPPORTED else self.weight_loader))
+        
+        self.bias = None
         if bias:
             self.bias = nnx.Param(
                 jnp.empty(self.output_size_per_partition,
@@ -431,7 +432,7 @@ class ColumnParallelLinear(LinearBase):
             self.bias_output_dim = 0
             self.bias_weight_loader = self.weight_loader
 
-    def weight_loader(self, param: nnx.param.Param, loaded_weight: jax.Array):
+    def weight_loader(self, param: nnx.Param, loaded_weight: jax.Array):
         # NOTE (Bob): This is a hack for now
         tp_rank = 0
         output_dim = getattr(param, "output_dim", 0)
@@ -486,7 +487,7 @@ class ColumnParallelLinear(LinearBase):
 
     def forward(
         self, input_
-    ) -> Union[torch.Tensor, tuple[torch.Tensor, Optional[nnx.param.Param]]]:
+    ) -> Union[torch.Tensor, tuple[torch.Tensor, Optional[nnx.Param]]]:
         bias = self.bias if not self.skip_bias_add else None
 
         # Matrix multiply.
@@ -1229,6 +1230,7 @@ class RowParallelLinear(LinearBase):
             weight_loader=(
                 self.weight_loader_v2 if self.quant_method.__class__.__name__
                 in WEIGHT_LOADER_V2_SUPPORTED else self.weight_loader))
+
         if not reduce_results and (bias and not skip_bias_add):
             raise ValueError("When not reduce the results, adding bias to the "
                              "results can lead to incorrect results")
