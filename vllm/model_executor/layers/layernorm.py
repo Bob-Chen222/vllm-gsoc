@@ -104,7 +104,7 @@ class RMSNorm(CustomOp):
         eps: float = 1e-6,
         var_hidden_size: Optional[int] = None,
         has_weight: bool = True,
-        dtype: Optional[torch.dtype] = None,
+        dtype: Optional[jnp.dtype] = None,
     ) -> None:
         super().__init__()
 
@@ -114,11 +114,11 @@ class RMSNorm(CustomOp):
                                        else var_hidden_size)
         self.has_weight = has_weight
         if dtype is not None:
-            self.weight = torch.ones(hidden_size, dtype=dtype)
+            self.weight = jnp.ones(hidden_size, dtype=dtype)
         else:
-            self.weight = torch.ones(hidden_size)
+            self.weight = jnp.ones(hidden_size)
         if self.has_weight:
-            self.weight = nn.Parameter(self.weight)
+            self.weight = nnx.Param(self.weight)
 
     def forward_native(
         self,
@@ -157,67 +157,6 @@ class RMSNorm(CustomOp):
             return x
         else:
             return x, residual
-
-    def forward_cuda(
-        self,
-        x: torch.Tensor,
-        residual: Optional[torch.Tensor] = None,
-    ) -> Union[torch.Tensor, tuple[torch.Tensor, torch.Tensor]]:
-        if self.variance_size_override is not None:
-            return self.forward_native(x, residual)
-
-        add_residual = residual is not None
-        norm_func = dispatch_cuda_rmsnorm_func(add_residual)
-
-        if add_residual:
-            return norm_func(x, residual, self.weight.data,
-                             self.variance_epsilon)
-        else:
-            return norm_func(x, self.weight.data, self.variance_epsilon)
-
-    def forward_hpu(
-        self,
-        x: torch.Tensor,
-        residual: Optional[torch.Tensor] = None,
-    ) -> Union[torch.Tensor, tuple[torch.Tensor, torch.Tensor]]:
-        from vllm_hpu_extension.kernels import rms_norm
-        HPUFusedRMSNorm = rms_norm()
-        if HPUFusedRMSNorm is None:
-            return self.forward_native(x, residual)
-        if residual is not None:
-            orig_shape = x.shape
-            residual += x.view(residual.shape)
-            # Note: HPUFusedRMSNorm requires 3D tensors as inputs
-            x = HPUFusedRMSNorm.apply(residual, self.weight,
-                                      self.variance_epsilon)
-            return x.view(orig_shape), residual
-
-        x = HPUFusedRMSNorm.apply(x, self.weight, self.variance_epsilon)
-        return x
-
-    def forward_xpu(
-        self,
-        x: torch.Tensor,
-        residual: Optional[torch.Tensor] = None,
-    ) -> Union[torch.Tensor, tuple[torch.Tensor, torch.Tensor]]:
-        if self.variance_size_override is not None:
-            return self.forward_native(x, residual)
-
-        from vllm._ipex_ops import ipex_ops as ops
-
-        if residual is not None:
-            ops.fused_add_rms_norm(
-                x,
-                residual,
-                self.weight.data,
-                self.variance_epsilon,
-            )
-            return x, residual
-        return ops.rms_norm(
-            x,
-            self.weight.data,
-            self.variance_epsilon,
-        )
     
     def __call__(
         self,
