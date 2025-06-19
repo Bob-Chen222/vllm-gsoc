@@ -191,13 +191,14 @@ class UnquantizedLinearMethod(LinearMethodBase):
                        output_partition_sizes: list[int], input_size: int,
                        output_size: int, params_dtype: torch.dtype,
                        **extra_weight_attrs):
-        weight = Parameter(torch.empty(sum(output_partition_sizes),
+        self.weight = nnx.Param(jnp.empty(sum(output_partition_sizes),
                                        input_size_per_partition,
                                        dtype=params_dtype),
                            requires_grad=False)
-        set_weight_attrs(weight, {"input_dim": 1, "output_dim": 0})
-        layer.register_parameter("weight", weight)
-        set_weight_attrs(weight, extra_weight_attrs)
+        self.io_dim = {"input_dim": 1, "output_dim": 0}
+        # set_weight_attrs(weight, {"input_dim": 1, "output_dim": 0})
+        # layer.register_parameter("weight", weight)
+        # set_weight_attrs(weight, extra_weight_attrs)
 
     def apply(self,
               layer: torch.nn.Module,
@@ -379,7 +380,7 @@ class ColumnParallelLinear(LinearBase):
         bias: bool = True,
         gather_output: bool = False,
         skip_bias_add: bool = False,
-        params_dtype: Optional[torch.dtype] = None,
+        params_dtype: Optional[jnp.dtype] = None,
         quant_config: Optional[QuantizationConfig] = None,
         output_sizes: Optional[list[int]] = None,
         prefix: str = "",
@@ -387,7 +388,8 @@ class ColumnParallelLinear(LinearBase):
         return_bias: bool = True,
     ):
         # Divide the weight matrix along the last dimension.
-        self.tp_size = get_tensor_model_parallel_world_size()
+        # NOTE (Bob): hardcode for now
+        self.tp_size = 1
         self.input_size_per_partition = input_size
         self.output_size_per_partition = divide(output_size, self.tp_size)
         self.output_partition_sizes = [self.output_size_per_partition]
@@ -423,19 +425,16 @@ class ColumnParallelLinear(LinearBase):
                 self.weight_loader_v2 if self.quant_method.__class__.__name__
                 in WEIGHT_LOADER_V2_SUPPORTED else self.weight_loader))
         if bias:
-            self.bias = Parameter(
-                torch.empty(self.output_size_per_partition,
+            self.bias = nnx.Param(
+                jnp.empty(self.output_size_per_partition,
                             dtype=params_dtype))
-            set_weight_attrs(self.bias, {
-                "output_dim": 0,
-                "weight_loader": self.weight_loader,
-            })
-        else:
-            self.register_parameter("bias", None)
+            self.bias_output_dim = 0
+            self.bias_weight_loader = self.weight_loader
 
-    def weight_loader(self, param: Parameter, loaded_weight: torch.Tensor):
-        tp_rank = get_tensor_model_parallel_rank()
-        output_dim = getattr(param, "output_dim", None)
+    def weight_loader(self, param: nnx.param.Param, loaded_weight: jax.Array):
+        # NOTE (Bob): This is a hack for now
+        tp_rank = 0
+        output_dim = getattr(param, "output_dim", 0)
 
         is_sharded_weight = getattr(param, "is_sharded_weight", False)
         use_bitsandbytes_4bit = getattr(param, "use_bitsandbytes_4bit", False)
@@ -458,12 +457,14 @@ class ColumnParallelLinear(LinearBase):
                 final_shape[output_dim] = final_shape[output_dim] // tp_size
             param.materialize(final_shape, dtype=loaded_weight.dtype)
 
-        param_data = param.data
+        param_data = param.value
         if output_dim is not None and not is_sharded_weight:
             shard_size = param_data.shape[output_dim]
             start_idx = tp_rank * shard_size
-            loaded_weight = loaded_weight.narrow(output_dim, start_idx,
-                                                 shard_size)
+            slices = [slice(None)] * loaded_weight.ndim
+            slices[output_dim] = slice(start_idx, start_idx + shard_size)
+            loaded_weight = loaded_weight[tuple(slices)]
+
 
         # Special case for loading scales off disk, which often do not
         # have a shape (such as in the case of AutoFP8).
@@ -471,11 +472,11 @@ class ColumnParallelLinear(LinearBase):
             loaded_weight = loaded_weight.reshape(1)
 
         assert param_data.shape == loaded_weight.shape
-        param_data.copy_(loaded_weight)
-
+        param.value = loaded_weight
     def weight_loader_v2(self, param: Parameter, loaded_weight: torch.Tensor):
         # Special case for loading scales off disk, which often do not
         # have a shape (such as in the case of AutoFP8).
+        assert(False)
         if len(loaded_weight.shape) == 0:
             assert loaded_weight.numel() == 1
             loaded_weight = loaded_weight.reshape(1)
@@ -483,7 +484,7 @@ class ColumnParallelLinear(LinearBase):
 
     def forward(
         self, input_
-    ) -> Union[torch.Tensor, tuple[torch.Tensor, Optional[Parameter]]]:
+    ) -> Union[torch.Tensor, tuple[torch.Tensor, Optional[nnx.param.Param]]]:
         bias = self.bias if not self.skip_bias_add else None
 
         # Matrix multiply.
@@ -498,6 +499,21 @@ class ColumnParallelLinear(LinearBase):
         if not self.return_bias:
             return output
         return output, output_bias
+    
+    def __call__(self, input_
+    ) -> Union[jax.Array, tuple[jax.Array, Optional[Parameter]]]:
+        bias = self.bias if not self.skip_bias_add else None
+
+        # Matrix multiply.
+        assert self.quant_method is not None
+        output_parallel = self.quant_method.apply(self, input_, bias)
+        # NOTE (Bob): This is a hack for now
+        output = output_parallel
+        output_bias = self.bias if self.skip_bias_add else None
+        if not self.return_bias:
+            return output
+        return output, output_bias
+
 
     def extra_repr(self) -> str:
         s = f"in_features={self.input_size}"
