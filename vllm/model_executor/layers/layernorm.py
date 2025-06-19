@@ -6,6 +6,10 @@ from typing import Optional, Union
 import torch
 import torch.nn as nn
 
+from flax import nnx
+import jax
+import jax.numpy as jnp
+
 import vllm.envs as envs
 from vllm.model_executor.custom_op import CustomOp
 from vllm.platforms import current_platform
@@ -214,6 +218,43 @@ class RMSNorm(CustomOp):
             self.weight.data,
             self.variance_epsilon,
         )
+    
+    def __call__(
+        self,
+        x: jax.Array,
+        residual: Optional[jax.Array] = None,
+    ) -> Union[jax.Array, tuple[jax.Array, jax.Array]]:
+        orig_dtype = x.dtype
+        x = x.astype(jnp.float32)
+        if residual is not None:
+            x = x + residual.astype(jnp.float32)
+            residual = x.astype(orig_dtype)
+
+        hidden_size = x.shape[-1]
+        if hidden_size != self.hidden_size:
+            raise ValueError("Expected hidden_size to be "
+                             f"{self.hidden_size}, but found: {hidden_size}")
+
+        if self.variance_size_override is None:
+            x_var = x
+        else:
+            if hidden_size < self.variance_size_override:
+                raise ValueError(
+                    "Expected hidden_size to be at least "
+                    f"{self.variance_size_override}, but found: {hidden_size}")
+
+            x_var = x[:, :, :self.variance_size_override]
+
+        variance = jnp.power(x_var, 2).mean(axis=-1, keepdims=True)
+
+        x = x * jnp.sqrt(variance + self.variance_epsilon)
+        x = x.astype(orig_dtype)
+        if self.has_weight:
+            x = x * self.weight
+        if residual is None:
+            return x
+        else:
+            return x, residual
 
     def extra_repr(self) -> str:
         s = f"hidden_size={self.weight.data.size(0)}"
