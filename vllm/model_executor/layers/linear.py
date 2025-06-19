@@ -1054,6 +1054,7 @@ class QKVParallelLinear(ColumnParallelLinear):
                         param, shard_size, shard_offset)
 
                 if use_bitsandbytes_4bit:
+                    assert False, "Bitsandbytes 4bit is not supported"
                     orig_qkv_offsets = {
                         "q": (0, self.total_num_heads * self.head_size),
                         "k": (self.total_num_heads * self.head_size,
@@ -1111,6 +1112,7 @@ class QKVParallelLinear(ColumnParallelLinear):
             is_sharded_weight = is_sharded_weight or use_bitsandbytes_4bit
 
             if use_bitsandbytes_4bit:
+                assert False, "Bitsandbytes 4bit is not supported"
                 orig_qkv_offsets = {
                     "q": (0, self.num_heads * self.head_size),
                     "k": (self.num_heads * self.head_size,
@@ -1125,8 +1127,11 @@ class QKVParallelLinear(ColumnParallelLinear):
                 shard_size, shard_offset = adjust_bitsandbytes_4bit_shard(
                     param, orig_qkv_offsets, loaded_shard_id)
 
-            param_data = param_data.narrow(output_dim, shard_offset,
-                                           shard_size)
+            # NOTE (Bob): This is a hack for now
+            # param_data = param_data.narrow(output_dim, shard_offset,
+            #                                shard_size)
+            param_data = param.value
+            
             if loaded_shard_id == "q":
                 shard_id = tp_rank
             else:
@@ -1134,8 +1139,12 @@ class QKVParallelLinear(ColumnParallelLinear):
             start_idx = shard_id * shard_size
 
             if not is_sharded_weight:
-                loaded_weight = loaded_weight.narrow(output_dim, start_idx,
-                                                     shard_size)
+                shard_size = param_data.shape[output_dim]
+                start_idx = tp_rank * shard_size
+                slices = [slice(None)] * loaded_weight.ndim
+                slices[output_dim] = slice(start_idx, start_idx + shard_size)
+                loaded_weight = loaded_weight[tuple(slices)]
+                
 
         # Special case for for AQLM codebooks.
         elif is_metadata:
@@ -1157,7 +1166,7 @@ class QKVParallelLinear(ColumnParallelLinear):
                     "for all partitions.")
 
         assert param_data.shape == loaded_weight.shape
-        param_data.copy_(loaded_weight)
+        param.value = loaded_weight
 
 
 class RowParallelLinear(LinearBase):
@@ -1199,7 +1208,7 @@ class RowParallelLinear(LinearBase):
         bias: bool = True,
         input_is_parallel: bool = True,
         skip_bias_add: bool = False,
-        params_dtype: Optional[torch.dtype] = None,
+        params_dtype: Optional[jnp.dtype] = None,
         reduce_results: bool = True,
         quant_config: Optional[QuantizationConfig] = None,
         prefix: str = "",
@@ -1207,8 +1216,8 @@ class RowParallelLinear(LinearBase):
         return_bias: bool = True,
     ):
         # Divide the weight matrix along the first dimension.
-        self.tp_rank = get_tensor_model_parallel_rank()
-        self.tp_size = get_tensor_model_parallel_world_size()
+        self.tp_rank = 0
+        self.tp_size = 1
         self.input_size_per_partition = divide(input_size, self.tp_size)
         self.output_size_per_partition = output_size
         self.output_partition_sizes = [output_size]
@@ -1241,18 +1250,17 @@ class RowParallelLinear(LinearBase):
                              "results can lead to incorrect results")
 
         if bias:
-            self.bias = Parameter(
-                torch.empty(self.output_size, dtype=params_dtype))
-            set_weight_attrs(self.bias, {
-                "output_dim": 0,
-                "weight_loader": self.weight_loader,
-            })
+            self.bias = nnx.Param(
+                jnp.empty(self.output_size, dtype=params_dtype))
+            self.output_dim = 0
+            self.weight_loader = self.weight_loader
         else:
             self.register_parameter("bias", None)
 
-    def weight_loader(self, param: Parameter, loaded_weight: torch.Tensor):
-        tp_rank = get_tensor_model_parallel_rank()
-        tp_size = get_tensor_model_parallel_world_size()
+    def weight_loader(self, param: nnx.Param, loaded_weight: jax.Array):
+        # NOTE (Bob): This is a hack for now
+        tp_rank = 0
+        tp_size = 1
         input_dim = getattr(param, "input_dim", None)
         use_bitsandbytes_4bit = getattr(param, "use_bitsandbytes_4bit", False)
         is_sharded_weight = getattr(param, "is_sharded_weight", False)
@@ -1264,10 +1272,12 @@ class RowParallelLinear(LinearBase):
         is_gguf_weight = getattr(param, "is_gguf_weight", False)
         is_gguf_weight_type = getattr(param, "is_gguf_weight_type", False)
         if is_gguf_weight_type:
+            assert False, "GGUF weight type is not supported"
             param.weight_type = loaded_weight.item()
 
         # Materialize GGUF UninitializedParameter
         if is_gguf_weight and isinstance(param, UninitializedParameter):
+            assert False, "GGUF weight type is not supported"
             weight_shape = list(loaded_weight.shape)
             if input_dim:
                 weight_shape[input_dim] = weight_shape[input_dim] // tp_size
