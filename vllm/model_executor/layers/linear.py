@@ -446,10 +446,12 @@ class ColumnParallelLinear(LinearBase):
         is_gguf_weight = getattr(param, "is_gguf_weight", False)
         is_gguf_weight_type = getattr(param, "is_gguf_weight_type", False)
         if is_gguf_weight_type:
+            assert(False)
             param.weight_type = loaded_weight.item()
 
         # Materialize GGUF UninitializedParameter
         if is_gguf_weight and isinstance(param, UninitializedParameter):
+            assert(False)
             final_shape = list(loaded_weight.shape)
             if output_dim is not None:
                 tp_size = get_tensor_model_parallel_world_size()
