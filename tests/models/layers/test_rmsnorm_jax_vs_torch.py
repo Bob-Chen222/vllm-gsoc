@@ -1,168 +1,211 @@
 import pytest
 import numpy as np
-import torch
 import jax
 import jax.numpy as jnp
 
-from vllm.model_executor.layers.layernorm import RMSNorm as TorchRMSNorm
-from vllm.model_executor.layers.layernorm_jax import RMSNorm as JaxRMSNorm
-
-def _init_weights_np(hidden_size, dtype=np.float32):
-    return np.random.normal(loc=1.0, scale=0.1, size=(hidden_size,)).astype(dtype)
-
-def _make_inputs(num_tokens, hidden_size, dtype):
-    np_dtype = {
-        torch.float32: np.float32,
-        torch.float16: np.float16,
-        torch.bfloat16: np.float32,  # jax.bfloat16 is not always available, so use float32 for comparison
-    }[dtype]
-    x = np.random.randn(num_tokens, hidden_size).astype(np_dtype) * (1 / (2 * hidden_size))
-    return x
-
-@pytest.mark.parametrize("num_tokens", [4, 16])
-@pytest.mark.parametrize("hidden_size", [8, 32])
-@pytest.mark.parametrize("add_residual", [False, True])
-@pytest.mark.parametrize("dtype", [torch.float32, torch.float16])
-def test_rmsnorm_jax_vs_torch(num_tokens, hidden_size, add_residual, dtype):
-    np.random.seed(42)
-    torch.manual_seed(42)
-    key = jax.random.PRNGKey(42)
-
-    # Prepare input and weight
-    x_np = _make_inputs(num_tokens, hidden_size, dtype)
-    weight_np = _init_weights_np(hidden_size, dtype=np.float32)
-    residual_np = _make_inputs(num_tokens, hidden_size, dtype) if add_residual else None
-
-    # PyTorch
-    torch_x = torch.tensor(x_np, dtype=dtype)
-    torch_weight = torch.tensor(weight_np, dtype=dtype)
-    torch_layer = TorchRMSNorm(hidden_size, dtype=dtype)
-    with torch.no_grad():
-        torch_layer.weight.copy_(torch_weight)
-    torch_residual = torch.tensor(residual_np, dtype=dtype) if add_residual else None
-    torch_out = torch_layer.forward_native(torch_x, torch_residual)
-    if isinstance(torch_out, tuple):
-        torch_out = tuple(t.detach().cpu().numpy() for t in torch_out)
-    else:
-        torch_out = torch_out.detach().cpu().numpy()
-
-    # JAX
-    jax_x = jnp.array(x_np, dtype=jnp.float32)
-    jax_weight = jnp.array(weight_np, dtype=jnp.float32)
-    jax_layer = JaxRMSNorm(hidden_size, dtype=jnp.float32)
-    # Set the weight parameter
-    jax_layer.weight.value = jax_weight
-    jax_residual = jnp.array(residual_np, dtype=jnp.float32) if add_residual else None
-    jax_out = jax_layer(jax_x, jax_residual)
-    if isinstance(jax_out, tuple):
-        jax_out = tuple(np.array(t) for t in jax_out)
-    else:
-        jax_out = np.array(jax_out)
-
-    # Compare outputs
-    if isinstance(torch_out, tuple):
-        assert len(torch_out) == len(jax_out)
-        for t, j in zip(torch_out, jax_out):
-            assert t.shape == j.shape
-            np.testing.assert_allclose(t, j, atol=1e-4, rtol=1e-4)
-    else:
-        assert torch_out.shape == jax_out.shape
-        np.testing.assert_allclose(torch_out, jax_out, atol=1e-4, rtol=1e-4)
+from vllm.model_executor.layers.layernorm import RMSNorm
 
 
-def test_rmsnorm_batched_3d():
-    # Test 3D input (batch, seq, hidden)
-    np.random.seed(0)
-    batch, seq, hidden = 2, 3, 5
-    x_np = np.random.randn(batch, seq, hidden).astype(np.float32)
-    weight_np = np.random.normal(1.0, 0.1, size=(hidden,)).astype(np.float32)
-    torch_x = torch.tensor(x_np, dtype=torch.float32)
-    torch_weight = torch.tensor(weight_np, dtype=torch.float32)
-    torch_layer = TorchRMSNorm(hidden, dtype=torch.float32)
-    with torch.no_grad():
-        torch_layer.weight.copy_(torch_weight)
-    torch_out = torch_layer.forward_native(torch_x)
-    torch_out = torch_out.detach().cpu().numpy()
-    jax_x = jnp.array(x_np, dtype=jnp.float32)
-    jax_weight = jnp.array(weight_np, dtype=jnp.float32)
-    jax_layer = JaxRMSNorm(hidden, dtype=jnp.float32)
-    jax_layer.weight.value = jax_weight
-    jax_out = jax_layer(jax_x)
-    jax_out = np.array(jax_out)
-    assert torch_out.shape == jax_out.shape
-    np.testing.assert_allclose(torch_out, jax_out, atol=1e-4, rtol=1e-4)
+def test_rmsnorm_basic_functionality():
+    """Test basic RMS normalization functionality."""
+    hidden_size = 8
+    num_tokens = 4
+    eps = 1e-6
+    
+    # Create test data
+    x = jnp.array([[1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0],
+                   [2.0, 4.0, 6.0, 8.0, 10.0, 12.0, 14.0, 16.0],
+                   [0.5, 1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0],
+                   [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]], dtype=jnp.float32)
+    
+    # Create RMSNorm layer with weight=1
+    layer = RMSNorm(hidden_size, eps=eps, dtype=jnp.float32)
+    layer.weight.value = jnp.ones(hidden_size, dtype=jnp.float32)
+    
+    # Apply RMS normalization
+    output = layer(x)
+    
+    # Verify output shape
+    assert output.shape == x.shape
+    
+    # Verify that the output is properly normalized
+    # For each row, the RMS should be approximately 1/sqrt(hidden_size)
+    expected_rms = 1.0 / jnp.sqrt(hidden_size)
+    
+    for i in range(num_tokens):
+        row_rms = jnp.sqrt(jnp.mean(output[i] ** 2))
+        assert jnp.abs(row_rms - expected_rms) < 1e-5
 
 
-def test_rmsnorm_hidden_size_1():
-    # Edge case: hidden_size=1
-    x_np = np.random.randn(7, 1).astype(np.float32)
-    weight_np = np.random.normal(1.0, 0.1, size=(1,)).astype(np.float32)
-    torch_x = torch.tensor(x_np, dtype=torch.float32)
-    torch_weight = torch.tensor(weight_np, dtype=torch.float32)
-    torch_layer = TorchRMSNorm(1, dtype=torch.float32)
-    with torch.no_grad():
-        torch_layer.weight.copy_(torch_weight)
-    torch_out = torch_layer.forward_native(torch_x)
-    torch_out = torch_out.detach().cpu().numpy()
-    jax_x = jnp.array(x_np, dtype=jnp.float32)
-    jax_weight = jnp.array(weight_np, dtype=jnp.float32)
-    jax_layer = JaxRMSNorm(1, dtype=jnp.float32)
-    jax_layer.weight.value = jax_weight
-    jax_out = jax_layer(jax_x)
-    jax_out = np.array(jax_out)
-    assert torch_out.shape == jax_out.shape
-    np.testing.assert_allclose(torch_out, jax_out, atol=1e-4, rtol=1e-4)
+def test_rmsnorm_with_weight():
+    """Test RMS normalization with learned weights."""
+    hidden_size = 4
+    eps = 1e-6
+    
+    x = jnp.array([[1.0, 2.0, 3.0, 4.0],
+                   [2.0, 4.0, 6.0, 8.0]], dtype=jnp.float32)
+    
+    # Create weights
+    weights = jnp.array([0.5, 1.0, 1.5, 2.0], dtype=jnp.float32)
+    
+    layer = RMSNorm(hidden_size, eps=eps, dtype=jnp.float32)
+    layer.weight.value = weights
+    
+    output = layer(x)
+    
+    # Verify output shape
+    assert output.shape == x.shape
+    
+    # Verify that weights are applied correctly
+    # The output should be: normalized_input * weights
+    normalized_input = x / jnp.sqrt(jnp.mean(x ** 2, axis=-1, keepdims=True) + eps)
+    expected_output = normalized_input * weights
+    
+    np.testing.assert_allclose(output, expected_output, atol=1e-6)
 
 
-def test_rmsnorm_large_hidden_size():
-    # Large hidden size
-    np.random.seed(1)
-    num_tokens, hidden = 2, 1024
-    x_np = np.random.randn(num_tokens, hidden).astype(np.float32)
-    weight_np = np.random.normal(1.0, 0.1, size=(hidden,)).astype(np.float32)
-    torch_x = torch.tensor(x_np, dtype=torch.float32)
-    torch_weight = torch.tensor(weight_np, dtype=torch.float32)
-    torch_layer = TorchRMSNorm(hidden, dtype=torch.float32)
-    with torch.no_grad():
-        torch_layer.weight.copy_(torch_weight)
-    torch_out = torch_layer.forward_native(torch_x)
-    torch_out = torch_out.detach().cpu().numpy()
-    jax_x = jnp.array(x_np, dtype=jnp.float32)
-    jax_weight = jnp.array(weight_np, dtype=jnp.float32)
-    jax_layer = JaxRMSNorm(hidden, dtype=jnp.float32)
-    jax_layer.weight.value = jax_weight
-    jax_out = jax_layer(jax_x)
-    jax_out = np.array(jax_out)
-    assert torch_out.shape == jax_out.shape
-    np.testing.assert_allclose(torch_out, jax_out, atol=1e-4, rtol=1e-4)
+def test_rmsnorm_with_residual():
+    """Test RMS normalization with residual connection."""
+    hidden_size = 4
+    eps = 1e-6
+    
+    x = jnp.array([[1.0, 2.0, 3.0, 4.0]], dtype=jnp.float32)
+    residual = jnp.array([[0.5, 1.0, 1.5, 2.0]], dtype=jnp.float32)
+    
+    layer = RMSNorm(hidden_size, eps=eps, dtype=jnp.float32)
+    layer.weight.value = jnp.ones(hidden_size, dtype=jnp.float32)
+    
+    output, updated_residual = layer(x, residual)
+    
+    # Verify output shapes
+    assert output.shape == x.shape
+    assert updated_residual.shape == residual.shape
+    
+    # Verify that residual is updated correctly (x + residual)
+    expected_residual = x + residual
+    np.testing.assert_allclose(updated_residual, expected_residual, atol=1e-6)
+    
+    # Verify that output is normalized version of (x + residual)
+    combined_input = x + residual
+    normalized = combined_input / jnp.sqrt(jnp.mean(combined_input ** 2, axis=-1, keepdims=True) + eps)
+    np.testing.assert_allclose(output, normalized, atol=1e-6)
+
+
+def test_rmsnorm_edge_cases():
+    """Test edge cases for RMS normalization."""
+    eps = 1e-6
+    
+    # Test with hidden_size = 1
+    layer = RMSNorm(1, eps=eps, dtype=jnp.float32)
+    layer.weight.value = jnp.array([2.0], dtype=jnp.float32)
+    
+    x = jnp.array([[1.0], [2.0], [3.0]], dtype=jnp.float32)
+    output = layer(x)
+    
+    assert output.shape == x.shape
+    # With hidden_size=1, normalization should just apply the weight
+    expected = x * 2.0
+    np.testing.assert_allclose(output, expected, atol=1e-6)
+    
+    # Test with all zeros
+    x_zeros = jnp.zeros((2, 4), dtype=jnp.float32)
+    layer_zeros = RMSNorm(4, eps=eps, dtype=jnp.float32)
+    layer_zeros.weight.value = jnp.ones(4, dtype=jnp.float32)
+    
+    output_zeros = layer_zeros(x_zeros)
+    # Should handle zeros gracefully (output will be zeros due to division by sqrt(eps))
+    assert output_zeros.shape == x_zeros.shape
+
+
+def test_rmsnorm_shape_validation():
+    """Test shape validation in RMS normalization."""
+    layer = RMSNorm(4, dtype=jnp.float32)
+    
+    # Test with correct shape
+    x_correct = jnp.ones((2, 4), dtype=jnp.float32)
+    output = layer(x_correct)
+    assert output.shape == (2, 4)
+    
+    # Test with incorrect hidden size
+    x_wrong = jnp.ones((2, 6), dtype=jnp.float32)
+    with pytest.raises(ValueError, match="Expected hidden_size to be 4, but found: 6"):
+        layer(x_wrong)
+
+
+def test_rmsnorm_3d_input():
+    """Test RMS normalization with 3D input (batch, seq, hidden)."""
+    batch_size, seq_len, hidden_size = 2, 3, 4
+    eps = 1e-6
+    
+    x = jnp.random.randn(batch_size, seq_len, hidden_size).astype(jnp.float32)
+    
+    layer = RMSNorm(hidden_size, eps=eps, dtype=jnp.float32)
+    layer.weight.value = jnp.ones(hidden_size, dtype=jnp.float32)
+    
+    output = layer(x)
+    
+    assert output.shape == x.shape
+    
+    # Verify normalization is applied correctly across the last dimension
+    for b in range(batch_size):
+        for s in range(seq_len):
+            row = output[b, s]
+            row_rms = jnp.sqrt(jnp.mean(row ** 2))
+            expected_rms = 1.0 / jnp.sqrt(hidden_size)
+            assert jnp.abs(row_rms - expected_rms) < 1e-5
+
+
+def test_rmsnorm_different_eps():
+    """Test RMS normalization with different epsilon values."""
+    hidden_size = 4
+    x = jnp.array([[1.0, 2.0, 3.0, 4.0]], dtype=jnp.float32)
+    
+    # Test with different epsilon values
+    for eps in [1e-6, 1e-5, 1e-4]:
+        layer = RMSNorm(hidden_size, eps=eps, dtype=jnp.float32)
+        layer.weight.value = jnp.ones(hidden_size, dtype=jnp.float32)
+        
+        output = layer(x)
+        
+        # Verify the normalization formula
+        expected = x / jnp.sqrt(jnp.mean(x ** 2, axis=-1, keepdims=True) + eps)
+        np.testing.assert_allclose(output, expected, atol=1e-6)
 
 
 def test_rmsnorm_no_weight():
-    # Test has_weight=False
-    np.random.seed(2)
-    num_tokens, hidden = 3, 7
-    x_np = np.random.randn(num_tokens, hidden).astype(np.float32)
-    torch_x = torch.tensor(x_np, dtype=torch.float32)
-    torch_layer = TorchRMSNorm(hidden, has_weight=False, dtype=torch.float32)
-    torch_out = torch_layer.forward_native(torch_x)
-    torch_out = torch_out.detach().cpu().numpy()
-    jax_x = jnp.array(x_np, dtype=jnp.float32)
-    jax_layer = JaxRMSNorm(hidden, has_weight=True, dtype=jnp.float32)  # JAX always has weight param, set to 1
-    jax_layer.weight.value = jnp.ones(hidden, dtype=jnp.float32)
-    jax_out = jax_layer(jax_x)
-    jax_out = np.array(jax_out)
-    assert torch_out.shape == jax_out.shape
-    np.testing.assert_allclose(torch_out, jax_out, atol=1e-4, rtol=1e-4)
+    """Test RMS normalization without weight parameter."""
+    hidden_size = 4
+    x = jnp.array([[1.0, 2.0, 3.0, 4.0]], dtype=jnp.float32)
+    
+    layer = RMSNorm(hidden_size, has_weight=False, dtype=jnp.float32)
+    
+    output = layer(x)
+    
+    # Without weight, should just normalize
+    expected = x / jnp.sqrt(jnp.mean(x ** 2, axis=-1, keepdims=True) + layer.variance_epsilon)
+    np.testing.assert_allclose(output, expected, atol=1e-6)
 
 
-def test_rmsnorm_shape_mismatch():
-    # Test error on shape mismatch
-    x_np = np.random.randn(2, 5).astype(np.float32)
-    torch_layer = TorchRMSNorm(4, dtype=torch.float32)
-    jax_layer = JaxRMSNorm(4, dtype=jnp.float32)
-    torch_x = torch.tensor(x_np, dtype=torch.float32)
-    jax_x = jnp.array(x_np, dtype=jnp.float32)
-    with pytest.raises(ValueError):
-        torch_layer.forward_native(torch_x)
-    with pytest.raises(ValueError):
-        jax_layer(jax_x) 
+def test_rmsnorm_variance_size_override():
+    """Test RMS normalization with variance size override."""
+    hidden_size = 8
+    var_hidden_size = 4
+    eps = 1e-6
+    
+    x = jnp.random.randn(2, hidden_size).astype(jnp.float32)
+    
+    layer = RMSNorm(hidden_size, eps=eps, var_hidden_size=var_hidden_size, dtype=jnp.float32)
+    layer.weight.value = jnp.ones(hidden_size, dtype=jnp.float32)
+    
+    output = layer(x)
+    
+    # Variance should be computed only over the first var_hidden_size dimensions
+    expected = x / jnp.sqrt(jnp.mean(x[:, :var_hidden_size] ** 2, axis=-1, keepdims=True) + eps)
+    np.testing.assert_allclose(output, expected, atol=1e-6)
+    
+    # Test error case: hidden_size < var_hidden_size
+    layer_error = RMSNorm(2, eps=eps, var_hidden_size=4, dtype=jnp.float32)
+    x_error = jnp.random.randn(1, 2).astype(jnp.float32)
+    
+    with pytest.raises(ValueError, match="Expected hidden_size to be at least 4, but found: 2"):
+        layer_error(x_error) 

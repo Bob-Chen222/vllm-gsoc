@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: Apache-2.0
+n# SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 """Custom normalization layers."""
 from typing import Optional, Union
@@ -247,7 +247,7 @@ class RMSNorm(CustomOp):
 
         variance = jnp.power(x_var, 2).mean(axis=-1, keepdims=True)
 
-        x = x * jnp.sqrt(variance + self.variance_epsilon)
+        x = x * (1.0 / jnp.sqrt(variance + self.variance_epsilon))
         x = x.astype(orig_dtype)
         if self.has_weight:
             x = x * self.weight
