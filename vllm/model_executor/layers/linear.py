@@ -840,7 +840,7 @@ class QKVParallelLinear(ColumnParallelLinear):
         total_num_kv_heads: Optional[int] = None,
         bias: bool = True,
         skip_bias_add: bool = False,
-        params_dtype: Optional[torch.dtype] = None,
+        params_dtype: Optional[jnp.dtype] = None,
         quant_config: Optional[QuantizationConfig] = None,
         prefix: str = "",
         *,
@@ -853,7 +853,8 @@ class QKVParallelLinear(ColumnParallelLinear):
             total_num_kv_heads = total_num_heads
         self.total_num_kv_heads = total_num_kv_heads
         # Divide the weight matrix along the last dimension.
-        tp_size = get_tensor_model_parallel_world_size()
+        # NOTE (Bob): hardcode for now
+        tp_size = 1
         self.num_heads = divide(self.total_num_heads, tp_size)
         if tp_size >= self.total_num_kv_heads:
             self.num_kv_heads = 1
@@ -909,6 +910,7 @@ class QKVParallelLinear(ColumnParallelLinear):
         An example of a model with these fused layers:
         https://huggingface.co/microsoft/Phi-3-mini-4k-instruct
         """
+        assert(False)
         shard_offsets = [
             # (shard_id, shard_offset, shard_size)
             ("q", 0, self.total_num_heads * self.head_size),
@@ -970,8 +972,8 @@ class QKVParallelLinear(ColumnParallelLinear):
                               shard_size=shard_size)
 
     def weight_loader(self,
-                      param: Parameter,
-                      loaded_weight: torch.Tensor,
+                      param: nnx.Param,
+                      loaded_weight: jax.Array,
                       loaded_shard_id: Optional[str] = None):
 
         # Special case for GGUF
@@ -979,6 +981,7 @@ class QKVParallelLinear(ColumnParallelLinear):
         is_gguf_weight = getattr(param, "is_gguf_weight", False)
         is_gguf_weight_type = getattr(param, "is_gguf_weight_type", False)
         if is_gguf_weight_type:
+            assert(False)
             idx_map = {"q": 0, "k": 1, "v": 2}
             if loaded_shard_id is not None:
                 param.data[idx_map[loaded_shard_id]].copy_(loaded_weight)
@@ -991,6 +994,7 @@ class QKVParallelLinear(ColumnParallelLinear):
             return
 
         if is_gguf_weight:
+            assert(False)
             tp_size = get_tensor_model_parallel_world_size()
             tp_rank = get_tensor_model_parallel_rank()
 
@@ -1071,7 +1075,8 @@ class QKVParallelLinear(ColumnParallelLinear):
                 self.weight_loader(param, loaded_weight_shard, shard_id)
             return
 
-        tp_rank = get_tensor_model_parallel_rank()
+        # NOTE (Bob): This is a hack for now
+        tp_rank = 0
         assert loaded_shard_id in ["q", "k", "v"]
 
         # If output dim is defined, use the default loading process.
