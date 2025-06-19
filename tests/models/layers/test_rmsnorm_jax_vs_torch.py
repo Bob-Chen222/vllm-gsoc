@@ -2,6 +2,7 @@ import pytest
 import numpy as np
 import jax
 import jax.numpy as jnp
+from flax import nnx
 
 from vllm.model_executor.layers.layernorm import RMSNorm
 
