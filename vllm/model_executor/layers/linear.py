@@ -9,6 +9,10 @@ import torch
 import torch.nn as nn
 from torch.nn.parameter import Parameter, UninitializedParameter
 
+from flax import nnx
+import jax
+import jax.numpy as jnp
+
 from vllm.distributed import (divide, get_tensor_model_parallel_rank,
                               get_tensor_model_parallel_world_size,
                               split_tensor_along_last_dim,
@@ -203,7 +207,7 @@ class UnquantizedLinearMethod(LinearMethodBase):
         return dispatch_unquantized_gemm()(x, layer.weight, bias)
 
 
-class LinearBase(torch.nn.Module):
+class LinearBase(flax.nnx.Module):
     """Base linear layer.
 
     Args:
@@ -221,20 +225,20 @@ class LinearBase(torch.nn.Module):
         input_size: int,
         output_size: int,
         skip_bias_add: bool = False,
-        params_dtype: Optional[torch.dtype] = None,
+        params_dtype: Optional[jnp.dtype] = None,
         quant_config: Optional[QuantizationConfig] = None,
         prefix: str = "",
         *,
         return_bias: bool = True,
     ):
-        super().__init__()
+        # super().__init__()
 
         # Keep input parameters
         self.input_size = input_size
         self.output_size = output_size
         self.skip_bias_add = skip_bias_add
         if params_dtype is None:
-            params_dtype = torch.get_default_dtype()
+            params_dtype = jnp.float32
         self.params_dtype = params_dtype
         if quant_config is None:
             self.quant_method: Optional[

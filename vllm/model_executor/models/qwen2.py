@@ -110,9 +110,10 @@ class Qwen2Attention(nn.Module):
         attn_type: str = AttentionType.DECODER,
         dual_chunk_attention_config: Optional[dict[str, Any]] = None,
     ) -> None:
-        super().__init__()
+        # super().__init__()
         self.hidden_size = hidden_size
-        tp_size = get_tensor_model_parallel_world_size()
+        # NOTE (Bob): hardcoding tp size for now
+        tp_size = 1
         self.total_num_heads = num_heads
         assert self.total_num_heads % tp_size == 0
         self.num_heads = self.total_num_heads // tp_size
