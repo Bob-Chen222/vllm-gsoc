@@ -1256,14 +1256,12 @@ class RowParallelLinear(LinearBase):
         if not reduce_results and (bias and not skip_bias_add):
             raise ValueError("When not reduce the results, adding bias to the "
                              "results can lead to incorrect results")
-
+        self.bias = None
         if bias:
             self.bias = nnx.Param(
                 jnp.empty(self.output_size, dtype=params_dtype))
             self.output_dim = 0
             self.weight_loader = self.weight_loader
-        else:
-            self.register_parameter("bias", None)
 
     def weight_loader(self, param: nnx.Param, loaded_weight: jax.Array):
         # NOTE (Bob): This is a hack for now
