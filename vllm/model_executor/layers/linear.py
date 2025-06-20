@@ -1018,7 +1018,7 @@ class QKVParallelLinear(ColumnParallelLinear):
                 return
 
         param_data = param.data
-        output_dim = getattr(param, "output_dim", None)
+        output_dim = getattr(param, "output_dim", 0)
         # Special case for AQLM codebooks.
         is_metadata = getattr(param, "is_metadata", False)
 
@@ -1026,6 +1026,7 @@ class QKVParallelLinear(ColumnParallelLinear):
         needs_scalar_to_array = getattr(param, "needs_scalar_to_array", False)
 
         if loaded_shard_id is None:
+            assert(False)
             # Loaded weight is already fused on disk (qkv).
             # (e.g., Phi-3's qkv_proj).
             if output_dim is None:
@@ -1294,8 +1295,9 @@ class RowParallelLinear(LinearBase):
         if input_dim is not None and not is_sharded_weight:
             shard_size = param_data.shape[input_dim]
             start_idx = tp_rank * shard_size
-            loaded_weight = loaded_weight.narrow(input_dim, start_idx,
-                                                 shard_size)
+            slices = [slice(None)] * loaded_weight.ndim
+            slices[input_dim] = slice(start_idx, start_idx + shard_size)
+            loaded_weight = loaded_weight[tuple(slices)]
 
         # Special case for loading scales off disk, which often do not
         # have a shape (such as in the case of AutoFP8).
@@ -1303,7 +1305,7 @@ class RowParallelLinear(LinearBase):
             loaded_weight = loaded_weight.reshape(1)
 
         assert param_data.shape == loaded_weight.shape
-        param_data.copy_(loaded_weight)
+        param.value = loaded_weight
 
     def weight_loader_v2(self, param: BasevLLMParameter,
                          loaded_weight: torch.Tensor):
@@ -1339,6 +1341,34 @@ class RowParallelLinear(LinearBase):
             output = tensor_model_parallel_all_reduce(output_parallel)
         else:
             output = output_parallel
+
+        output_bias = self.bias if self.skip_bias_add else None
+
+        if not self.return_bias:
+            return output
+        return output, output_bias
+    
+    def __call__(self, input_
+    ) -> Union[jax.Array, tuple[jax.Array, Optional[nnx.Param]]]:
+        if self.input_is_parallel:
+            input_parallel = input_
+        else:
+            # NOTE (Bob): This is a hack for now
+            tp_rank = 0
+            tp_size = 1
+            splitted_input = jnp.split(input_, num_or_size_splits=tp_size, axis=0)
+            input_parallel = splitted_input[tp_rank]
+
+        # Matrix multiply.
+        assert self.quant_method is not None
+        # Only fuse bias add into GEMM for rank 0 (this ensures that
+        # bias will not get added more than once in TP>1 case)
+        bias_ = None if (self.tp_rank > 0 or self.skip_bias_add) else self.bias
+        output_parallel = self.quant_method.apply(self,
+                                                  input_parallel,
+                                                  bias=bias_)
+        # NOTE (Bob): This is a hack for now
+        output = output_parallel
 
         output_bias = self.bias if self.skip_bias_add else None
 
