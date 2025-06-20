@@ -53,7 +53,6 @@ def _rotate_gptj(x: torch.Tensor) -> torch.Tensor:
     x = torch.stack((-x2, x1), dim=-1)
     return x.flatten(-2)
 
-
 def _apply_rotary_emb_torch(
     x: torch.Tensor,
     cos: torch.Tensor,
@@ -73,6 +72,32 @@ def _apply_rotary_emb_torch(
         return torch.cat((o1, o2), dim=-1)
     else:
         return torch.stack((o1, o2), dim=-1).flatten(-2)
+
+def _apply_rotary_emb_jax(
+    x: jnp.ndarray,
+    cos: jnp.ndarray,
+    sin: jnp.ndarray,
+    is_neox_style: bool,
+) -> jnp.ndarray:
+    cos = jnp.expand_dims(cos, axis=-2).astype(x.dtype)
+    sin = jnp.expand_dims(sin, axis=-2).astype(x.dtype)
+
+    if is_neox_style:
+        x1, x2 = jnp.split(x, 2, axis=-1)
+    else:
+        x1 = x[..., ::2]
+        x2 = x[..., 1::2]
+
+    o1 = x1 * cos - x2 * sin
+    o2 = x2 * cos + x1 * sin
+
+    if is_neox_style:
+        return jnp.concatenate([o1, o2], axis=-1)
+    else:
+        # stack then flatten last 2 dims
+        stacked = jnp.stack([o1, o2], axis=-1)  # shape: [..., dim/2, 2]
+        return jnp.reshape(stacked, x.shape)
+
 
 
 def _apply_rotary_emb(x: torch.Tensor, cos: torch.Tensor, sin: torch.Tensor,
@@ -114,29 +139,28 @@ class RotaryEmbedding(CustomOp):
         self.dtype = dtype
 
         cache = self._compute_cos_sin_cache()
-        cache = cache.to(dtype)
-        self.cos_sin_cache: torch.Tensor
-        self.register_buffer("cos_sin_cache", cache, persistent=False)
+        cache = jnp.asarray(cache, dtype=dtype)
+        self.cos_sin_cache: jnp.Array
+        self.cos_sin_cache = self.cos_sin_cache = nnx.Variable(cos_sin_cache)
 
-    def _compute_inv_freq(self, base: float) -> torch.Tensor:
+    def _compute_inv_freq(self, base: float) -> jnp.Array:
         """Compute the inverse frequency."""
         # NOTE(woosuk): To exactly match the HF implementation, we need to
         # use CPU to compute the cache and then move it to GPU. However, we
         # create the cache on GPU for faster initialization. This may cause
         # a slight numerical difference between the HF implementation and ours.
-        inv_freq = 1.0 / (base**(torch.arange(
-            0, self.rotary_dim, 2, dtype=torch.float) / self.rotary_dim))
+        inv_freq = 1.0 / (base ** (jnp.arange(0, self.rotary_dim, 2, dtype=jnp.float32) / self.rotary_dim))
         return inv_freq
 
-    def _compute_cos_sin_cache(self) -> torch.Tensor:
+    def _compute_cos_sin_cache(self) -> jnp.Array:
         """Compute the cos and sin cache."""
         inv_freq = self._compute_inv_freq(self.base)
-        t = torch.arange(self.max_position_embeddings, dtype=torch.float)
+        t = jnp.arange(self.max_position_embeddings, dtype=jnp.float32)
 
-        freqs = torch.einsum("i,j -> ij", t, inv_freq)
-        cos = freqs.cos()
-        sin = freqs.sin()
-        cache = torch.cat((cos, sin), dim=-1)
+        freqs = jnp.einsum("i,j -> ij", t, inv_freq)
+        cos = jnp.cos(freqs)
+        sin = jnp.sin(freqs)
+        cache = jnp.concatenate([cos, sin], axis=-1)
         return cache
 
     def forward_native(
@@ -171,6 +195,39 @@ class RotaryEmbedding(CustomOp):
             key_rot = _apply_rotary_emb_torch(key_rot, cos, sin,
                                               self.is_neox_style)
             key = torch.cat((key_rot, key_pass), dim=-1).reshape(key_shape)
+        return query, key
+    
+    def __call__(
+            self,
+            positions: jax.Array,
+            query: jax.Array,
+            key: Optional[jax.Array] = None,
+            offsets: Optional[jax.Array] = None,
+    ) -> tuple[jax.Array, Optional[jax.Array]]:
+        if offsets is not None:
+            positions = positions + offsets
+        positions = positions.flatten()
+        num_tokens = positions.shape[0]
+        cos_sin = jnp.take(self.cos_sin_cache.value, positions, axis=0)
+        cos, sin = jnp.split(cos_sin, 2, axis=-1)
+
+        query_shape = query.shape
+        query = jnp.reshape(query, (num_tokens, -1, self.head_size))
+        query_rot = query[..., :self.rotary_dim]
+        query_pass = query[..., self.rotary_dim:]
+        query_rot = _apply_rotary_emb_jax(query_rot, cos, sin,
+                                            self.is_neox_style)
+        query = jnp.reshape(jnp.concatenate([query_rot, query_pass], axis=-1), query_shape)
+
+        # key may be None in some cases, e.g. cross-layer KV sharing
+        if key is not None:
+            key_shape = key.shape
+            key = jnp.reshape(key, (num_tokens, -1, self.head_size))
+            key_rot = key[..., :self.rotary_dim]
+            key_pass = key[..., self.rotary_dim:]
+            key_rot = _apply_rotary_emb_jax(key_rot, cos, sin,
+                                              self.is_neox_style)
+            key = jnp.reshape(jnp.concatenate([key_rot, key_pass], axis=-1), key_shape)
         return query, key
 
     def forward_cuda(
