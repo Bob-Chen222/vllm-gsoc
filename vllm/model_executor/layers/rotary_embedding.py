@@ -141,9 +141,9 @@ class RotaryEmbedding(CustomOp):
         cache = self._compute_cos_sin_cache()
         cache = jnp.asarray(cache, dtype=dtype)
         self.cos_sin_cache: jnp.Array
-        self.cos_sin_cache = self.cos_sin_cache = nnx.Variable(cos_sin_cache)
+        self.cos_sin_cache = nnx.Variable(cache)
 
-    def _compute_inv_freq(self, base: float) -> jnp.Array:
+    def _compute_inv_freq(self, base: float) -> jax.Array:
         """Compute the inverse frequency."""
         # NOTE(woosuk): To exactly match the HF implementation, we need to
         # use CPU to compute the cache and then move it to GPU. However, we
@@ -152,7 +152,7 @@ class RotaryEmbedding(CustomOp):
         inv_freq = 1.0 / (base ** (jnp.arange(0, self.rotary_dim, 2, dtype=jnp.float32) / self.rotary_dim))
         return inv_freq
 
-    def _compute_cos_sin_cache(self) -> jnp.Array:
+    def _compute_cos_sin_cache(self) -> jax.Array:
         """Compute the cos and sin cache."""
         inv_freq = self._compute_inv_freq(self.base)
         t = jnp.arange(self.max_position_embeddings, dtype=jnp.float32)
