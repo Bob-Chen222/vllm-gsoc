@@ -30,6 +30,10 @@ import torch
 import torch.nn as nn
 from transformers import PretrainedConfig
 
+from flax import nnx
+import jax
+import jax.numpy as jnp
+
 from vllm.model_executor.custom_op import CustomOp
 from vllm.platforms import current_platform
 
@@ -1709,12 +1713,12 @@ def get_rope(
     base: float,
     is_neox_style: bool = True,
     rope_scaling: Optional[dict[str, Any]] = None,
-    dtype: Optional[torch.dtype] = None,
+    dtype: Optional[jnp.dtype] = None,
     partial_rotary_factor: float = 1.0,
     dual_chunk_attention_config: Optional[dict[str, Any]] = None,
 ) -> RotaryEmbedding:
     if dtype is None:
-        dtype = torch.get_default_dtype()
+        dtype = jnp.float32
     if rope_scaling is not None:
         # Transforms every value that is a list into a tuple for caching calls
         rope_scaling_tuple = {
