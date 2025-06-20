@@ -1743,6 +1743,7 @@ def get_rope(
         return _ROPE_DICT[key]
 
     if dual_chunk_attention_config is not None:
+        assert False, "Dual chunk attention is not supported"
         extra_kwargs = {
             k: v
             for k, v in dual_chunk_attention_config.items()
@@ -1756,6 +1757,7 @@ def get_rope(
         rotary_emb = RotaryEmbedding(head_size, rotary_dim, max_position, base,
                                      is_neox_style, dtype)
     else:
+        assert False, "else is also not supported"
         scaling_type = rope_scaling["rope_type"]
 
         if scaling_type == "llama3":
