@@ -625,6 +625,7 @@ class MergedColumnParallelLinear(ColumnParallelLinear):
         needs_scalar_to_array = getattr(param, "needs_scalar_to_array", False)
 
         if loaded_shard_id is None:
+            assert(False)
             # Loaded weight is already fused on disk (mlp).
             # (e.g., Phi-3's gate_up_proj).
             if output_dim is None:
@@ -707,12 +708,10 @@ class MergedColumnParallelLinear(ColumnParallelLinear):
                 shard_offset = loaded_weight.shape[output_dim] * \
                     loaded_shard_id
 
-            param_data = param_data.narrow(output_dim, shard_offset,
-                                           shard_size)
+            param_data = jnp.take(param_data, jnp.arange(shard_offset, shard_offset + shard_size), axis=output_dim)
             start_idx = tp_rank * shard_size
             if not is_sharded_weight:
-                loaded_weight = loaded_weight.narrow(output_dim, start_idx,
-                                                     shard_size)
+                loaded_weight = jnp.take(loaded_weight, jnp.arange(start_idx, start_idx + shard_size), axis=output_dim)
         # Special case for AQLM codebooks.
         elif is_metadata:
             # metadata indicates fixed size concatenated along dim 0
@@ -734,7 +733,7 @@ class MergedColumnParallelLinear(ColumnParallelLinear):
                     "the same for all partitions.")
 
         assert param_data.shape == loaded_weight.shape
-        param_data.copy_(loaded_weight)
+        param.value = loaded_weight
 
     def _load_fused_module_from_checkpoint(self, param: BasevLLMParameter,
                                            loaded_weight: torch.Tensor):
