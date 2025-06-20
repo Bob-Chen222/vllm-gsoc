@@ -558,14 +558,15 @@ class MergedColumnParallelLinear(ColumnParallelLinear):
         bias: bool = True,
         gather_output: bool = False,
         skip_bias_add: bool = False,
-        params_dtype: Optional[torch.dtype] = None,
+        params_dtype: Optional[jnp.dtype] = None,
         quant_config: Optional[QuantizationConfig] = None,
         prefix: str = "",
         *,
         return_bias: bool = True,
     ):
         self.output_sizes = output_sizes
-        tp_size = get_tensor_model_parallel_world_size()
+        # NOTE (Bob): hardcode for now
+        tp_size = 1
         assert all(output_size % tp_size == 0 for output_size in output_sizes)
         super().__init__(input_size=input_size,
                          output_size=sum(output_sizes),
@@ -578,8 +579,8 @@ class MergedColumnParallelLinear(ColumnParallelLinear):
                          return_bias=return_bias)
 
     def weight_loader(self,
-                      param: Parameter,
-                      loaded_weight: torch.Tensor,
+                      param: nnx.Param,
+                      loaded_weight: jax.Array,
                       loaded_shard_id: Optional[int] = None):
 
         # Special case for GGUF
@@ -587,6 +588,7 @@ class MergedColumnParallelLinear(ColumnParallelLinear):
         is_gguf_weight = getattr(param, "is_gguf_weight", False)
         is_gguf_weight_type = getattr(param, "is_gguf_weight_type", False)
         if is_gguf_weight_type:
+            assert(False)
             if loaded_shard_id is not None:
                 param.data[loaded_shard_id].copy_(loaded_weight)
                 param.shard_weight_type[loaded_shard_id] = loaded_weight.item()
@@ -598,6 +600,7 @@ class MergedColumnParallelLinear(ColumnParallelLinear):
             return
 
         if is_gguf_weight:
+            assert(False)
             tp_size = get_tensor_model_parallel_world_size()
             tp_rank = get_tensor_model_parallel_rank()
 
@@ -614,7 +617,8 @@ class MergedColumnParallelLinear(ColumnParallelLinear):
                 return
 
         param_data = param.data
-        output_dim = getattr(param, "output_dim", None)
+        # NOTE (Bob): This is a hack for now
+        output_dim = getattr(param, "output_dim", 0)
         # Special case for AQLM codebooks.
         is_metadata = getattr(param, "is_metadata", False)
         # Special case for per-tensor scale to load scalar into fused array.
@@ -654,6 +658,7 @@ class MergedColumnParallelLinear(ColumnParallelLinear):
                     param, shard_size, shard_offset)
 
                 if use_bitsandbytes_4bit:
+                    assert(False)
                     index = list(itertools.accumulate([0] + self.output_sizes))
                     orig_offsets = {
                         str(i): (index[i], size)
@@ -669,8 +674,10 @@ class MergedColumnParallelLinear(ColumnParallelLinear):
             return
 
         assert loaded_shard_id < len(self.output_sizes)
-        tp_rank = get_tensor_model_parallel_rank()
-        tp_size = get_tensor_model_parallel_world_size()
+
+        # NOTE (Bob): This is a hack for now
+        tp_rank = 0
+        tp_size = 1
         if output_dim is not None:
             shard_offset = sum(self.output_sizes[:loaded_shard_id]) // tp_size
             shard_size = self.output_sizes[loaded_shard_id] // tp_size
@@ -695,6 +702,7 @@ class MergedColumnParallelLinear(ColumnParallelLinear):
             is_sharded_weight = is_sharded_weight or use_bitsandbytes_4bit
 
             if use_bitsandbytes_4bit:
+                assert(False)
                 shard_size = loaded_weight.shape[output_dim]
                 shard_offset = loaded_weight.shape[output_dim] * \
                     loaded_shard_id
