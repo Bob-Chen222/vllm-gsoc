@@ -114,6 +114,7 @@ class Attention(nnx.Module):
             self, prefix=prefix) if quant_config else None
         if quant_method is not None and not isinstance(
                 quant_method, UnquantizedLinearMethod):
+            assert False
             assert isinstance(quant_method, BaseKVCacheMethod)
             # TODO (mgoin): kv cache dtype should be specified in the FP8
             # checkpoint config and become the "auto" behavior
