@@ -7,6 +7,8 @@ from functools import cache
 from typing import Generator, Optional, Type
 
 import torch
+import jax
+import jax.numpy as jnp
 
 import vllm.envs as envs
 from vllm.attention.backends.abstract import AttentionBackend
@@ -81,7 +83,7 @@ def get_global_forced_attn_backend() -> Optional[_Backend]:
 
 def get_attn_backend(
     head_size: int,
-    dtype: torch.dtype,
+    dtype: jnp.dtype,
     kv_cache_dtype: Optional[str],
     block_size: int,
     is_attention_free: bool,
@@ -108,7 +110,7 @@ def get_attn_backend(
 @cache
 def _cached_get_attn_backend(
     head_size: int,
-    dtype: torch.dtype,
+    dtype: jnp.dtype,
     kv_cache_dtype: Optional[str],
     block_size: int,
     is_attention_free: bool,
