@@ -8,6 +8,10 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from flax import nnx
+import jax
+import jax.numpy as jnp
+
 from vllm.distributed import (divide, get_tensor_model_parallel_rank,
                               get_tensor_model_parallel_world_size)
 from vllm.model_executor.custom_op import CustomOp
@@ -75,6 +79,11 @@ class SiluAndMul(CustomOp):
         """PyTorch-native implementation equivalent to forward()."""
         d = x.shape[-1] // 2
         return F.silu(x[..., :d]) * x[..., d:]
+    
+    def __call__ (self, x: jax.Array) -> jax.Array:
+        """JAX implementation equivalent to forward()."""
+        d = x.shape[-1] // 2
+        return jax.nn.silu(x[..., :d]) * x[..., d:]
 
     def forward_cuda(self, x: torch.Tensor) -> torch.Tensor:
         d = x.shape[-1] // 2
