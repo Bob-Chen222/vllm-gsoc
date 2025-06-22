@@ -57,7 +57,7 @@ from .utils import (AutoWeightsLoader, PPMissingLayer, extract_layer_index,
                     maybe_prefix)
 
 
-class Qwen2MLP(nn.Module):
+class Qwen2MLP(nnx.Module):
 
     def __init__(
         self,
@@ -172,6 +172,11 @@ class Qwen2Attention(nn.Module):
                 "layer_idx": extract_layer_index(prefix),
                 "dual_chunk_attention_config": dual_chunk_attention_config,
             } if dual_chunk_attention_config else {})
+        
+        self.attn = nnx.MultiHeadAttention(
+            num_heads=self.num_heads,
+
+        )
 
     def forward(
         self,
