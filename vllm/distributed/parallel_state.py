@@ -409,9 +409,9 @@ class GroupCoordinator:
         return self.device_communicator.reduce_scatter(input_, dim)
 
     def gather(self,
-               input_: torch.Tensor,
+               input_: jax.Array,
                dst: int = 0,
-               dim: int = -1) -> Optional[torch.Tensor]:
+               dim: int = -1) -> Optional[jax.Array]:
         """
         NOTE: We assume that the input tensor is on the same device across
         all the ranks.
@@ -421,6 +421,9 @@ class GroupCoordinator:
         # Bypass the function if we are using only 1 GPU.
         if world_size == 1:
             return input_
+        else:
+            # NOTE(Bob): This is a hack for now
+            assert False, "Gather is not supported for JAX"
         return self.device_communicator.gather(input_, dst, dim)
 
     def broadcast(self, input_: torch.Tensor, src: int = 0):

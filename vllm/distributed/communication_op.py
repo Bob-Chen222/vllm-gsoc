@@ -6,6 +6,10 @@ from typing import Any, Optional, Union
 import torch
 import torch.distributed
 
+from flax import nnx
+import jax
+import jax.numpy as jnp
+
 from .parallel_state import get_tp_group
 
 
@@ -26,9 +30,9 @@ def tensor_model_parallel_reduce_scatter(input_: torch.Tensor,
     return get_tp_group().reduce_scatter(input_, dim)
 
 
-def tensor_model_parallel_gather(input_: torch.Tensor,
+def tensor_model_parallel_gather(input_: jax.Array,
                                  dst: int = 0,
-                                 dim: int = -1) -> Optional[torch.Tensor]:
+                                 dim: int = -1) -> Optional[jax.Array]:
     """Gather the input tensor across model parallel group."""
     return get_tp_group().gather(input_, dst, dim)
 

@@ -8,6 +8,10 @@ from typing import Optional
 import torch
 import torch.nn as nn
 
+from flax import nnx
+import jax
+import jax.numpy as jnp
+
 import vllm.envs as envs
 from vllm.distributed import (tensor_model_parallel_all_gather,
                               tensor_model_parallel_gather)
@@ -22,7 +26,7 @@ if envs.VLLM_LOGITS_PROCESSOR_THREADS is not None:
         envs.VLLM_LOGITS_PROCESSOR_THREADS)
 
 
-class LogitsProcessor(nn.Module):
+class LogitsProcessor(nnx.Module):
     """Process logits and apply logits processors from sampling metadata.
 
     This layer does the following:
@@ -56,14 +60,15 @@ class LogitsProcessor(nn.Module):
     def forward(
         self,
         lm_head: VocabParallelEmbedding,
-        hidden_states: torch.Tensor,
+        hidden_states: jax.Array,
         sampling_metadata: Optional[SamplingMetadata] = None,
-        embedding_bias: Optional[torch.Tensor] = None,
-    ) -> Optional[torch.Tensor]:
+        embedding_bias: Optional[jax.Array] = None,
+    ) -> Optional[jax.Array]:
         if self.logits_as_input:
             logits = hidden_states
         else:
             if sampling_metadata is not None:
+                assert False, "Sampling metadata is not supported for JAX"
                 hidden_states = _prune_hidden_states(hidden_states,
                                                      sampling_metadata)
 
@@ -72,7 +77,7 @@ class LogitsProcessor(nn.Module):
         if logits is not None:
             if self.soft_cap is not None:
                 logits = logits / self.soft_cap
-                logits = torch.tanh(logits)
+                logits = jnp.tanh(logits)
                 logits = logits * self.soft_cap
 
             if self.scale != 1.0:
@@ -85,9 +90,10 @@ class LogitsProcessor(nn.Module):
 
         return logits
 
-    def _gather_logits(self, logits: torch.Tensor) -> torch.Tensor:
+    def _gather_logits(self, logits: jax.Array) -> jax.Array:
         """gather/all-gather the logits tensor across model parallel group."""
         if self.use_all_gather:
+            assert False, "All-gather is not supported for JAX"
             # Gather is not supported for some devices such as TPUs.
             # Use all-gather instead.
             # NOTE(woosuk): Here, the outputs of every device should not be None
@@ -101,10 +107,10 @@ class LogitsProcessor(nn.Module):
 
     def _get_logits(
         self,
-        hidden_states: torch.Tensor,
+        hidden_states: jax.Array,
         lm_head: VocabParallelEmbedding,
-        embedding_bias: Optional[torch.Tensor],
-    ) -> Optional[torch.Tensor]:
+        embedding_bias: Optional[jax.Array],
+    ) -> Optional[jax.Array]:
         # Get the logits for the next tokens.
         logits = lm_head.quant_method.apply(lm_head,
                                             hidden_states,
@@ -140,9 +146,9 @@ def _prune_hidden_states(
 
 
 def _apply_logits_processors(
-    logits: torch.Tensor,
+    logits: jax.Array,
     sampling_metadata: SamplingMetadata,
-) -> torch.Tensor:
+) -> jax.Array:
     found_logits_processors = False
     logits_processed = 0
     logits_row_ids_and_logits_row_futures = []
