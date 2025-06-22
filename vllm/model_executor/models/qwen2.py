@@ -173,10 +173,6 @@ class Qwen2Attention(nn.Module):
                 "dual_chunk_attention_config": dual_chunk_attention_config,
             } if dual_chunk_attention_config else {})
         
-        self.attn = nnx.MultiHeadAttention(
-            num_heads=self.num_heads,
-
-        )
 
     def forward(
         self,
