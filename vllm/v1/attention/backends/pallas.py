@@ -300,5 +300,6 @@ def write_to_kv_cache(
 
     torch.ops.xla.dynamo_set_buffer_donor_(kv_cache, False)
 
+    # NOTE(Bob): need to check if this is correct
     kv_cache = kv_cache.reshape((-1,) + kv_cache.shape[2:])
     kv_cache = kv_cache.at[slot_mapping].set(kv)
