@@ -2,7 +2,7 @@
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
 from dataclasses import dataclass
-from typing import Any, Optional
+from typing import Any, Optional, Tuple
 
 import torch
 # Required to register custom ops.
@@ -207,14 +207,11 @@ class PallasAttentionBackendImpl(AttentionImpl, nnx.Module):
             num_kv_pages_per_block=None,
             num_queries_per_block=None,
             vmem_limit_bytes=None,
-            use_kernel=True,
             sm_scale=self.scale,
             sliding_window=self.sliding_window,
             soft_cap=self.logits_soft_cap,
         )
         
-        output = ragged_paged_attention_kernel(
-
         return output.reshape(num_tokens, hidden_size)
     
     
@@ -269,11 +266,23 @@ class PallasAttentionBackendImpl(AttentionImpl, nnx.Module):
         value = jnp.repeat(value, replication_factor, axis=1)
         
         # then do the attention
-        output = self.attention_jax(query, key, value)
-        
-        
-        
-
+        output = ragged_paged_attention_kernel(
+            query,
+            kv_cache[0] if isinstance(kv_cache, tuple) else kv_cache,
+            attn_metadata.context_lens,
+            attn_metadata.block_tables,
+            attn_metadata.query_start_loc,
+            attn_metadata.num_seqs,
+            # By default, the system utilizes optimized block size and
+            # vmem_limit_bytes parameters from the kernel repository. However,
+            # these can be manually adjusted for debugging if necessary.
+            num_kv_pages_per_block=None,
+            num_queries_per_block=None,
+            vmem_limit_bytes=None,
+            sm_scale=self.scale,
+            sliding_window=self.sliding_window,
+            soft_cap=self.logits_soft_cap,
+        )
 
         return output.reshape(num_tokens, hidden_size)
 
