@@ -248,22 +248,11 @@ class PallasAttentionBackendImpl(AttentionImpl, nnx.Module):
         query = jnp.reshape(query, (num_tokens, self.num_heads, self.head_size))
 
         # NOTE(Bob): because of the fact that we are currently using the attention_jax, it helps to manage the kvcache
-        # if self.kv_sharing_target_layer_name is None and jnp.size(kv_cache[0]) > 0:
-        #     # Write input keys and values to the KV cache.
-        #     # Skip this if sharing KV cache with an earlier attention layer.
-        #     slot_mapping = attn_metadata.slot_mapping
-        #     write_to_kv_cache(key, value, kv_cache, slot_mapping)
-            
-        
-        
-
-        # NOTE(Bob): do the attention by ourselves here
-        # first recover the key and value from kv_heads to num_heads
-        key = key.reshape(num_tokens, self.num_kv_heads, self.head_size)
-        value = value.reshape(num_tokens, self.num_kv_heads, self.head_size)
-        replication_factor = self.num_heads // self.num_kv_heads
-        key = jnp.repeat(key, replication_factor, axis=1)
-        value = jnp.repeat(value, replication_factor, axis=1)
+        if self.kv_sharing_target_layer_name is None and jnp.size(kv_cache[0]) > 0:
+            # Write input keys and values to the KV cache.
+            # Skip this if sharing KV cache with an earlier attention layer.
+            slot_mapping = attn_metadata.slot_mapping
+            write_to_kv_cache(key, value, kv_cache, slot_mapping)
         
         # then do the attention
         output = ragged_paged_attention_kernel(
