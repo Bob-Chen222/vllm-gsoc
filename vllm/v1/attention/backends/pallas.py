@@ -8,6 +8,10 @@ import torch
 # Required to register custom ops.
 import torch_xla.experimental.custom_kernel  # noqa: F401
 
+from flax import nnx
+import jax
+import jax.numpy as jnp
+
 from vllm.attention.backends.abstract import (AttentionBackend, AttentionImpl,
                                               AttentionLayer, AttentionType)
 from vllm.attention.backends.utils import CommonAttentionState
@@ -92,14 +96,14 @@ class PallasMetadata:
     #                                   |-- query_len ---|
 
     # Used in the PallasAttentionBackendImpl
-    slot_mapping: torch.Tensor
-    block_tables: torch.Tensor
-    context_lens: torch.Tensor
-    query_start_loc: torch.Tensor
-    num_seqs: torch.Tensor
+    slot_mapping: jax.Array
+    block_tables: jax.Array
+    context_lens: jax.Array
+    query_start_loc: jax.Array
+    num_seqs: jax.Array
 
 
-class PallasAttentionBackendImpl(AttentionImpl):
+class PallasAttentionBackendImpl(AttentionImpl, nnx.Module):
 
     def __init__(
         self,
@@ -209,13 +213,73 @@ class PallasAttentionBackendImpl(AttentionImpl):
         )
 
         return output.reshape(num_tokens, hidden_size)
+    
+    
+    
+    def __call__(
+        self,
+        layer: AttentionLayer,
+        query: jax.Array,
+        key: jax.Array,
+        value: jax.Array,
+        kv_cache: Tuple[jax.Array, jax.Array],
+        attn_metadata: PallasMetadata,
+        output: Optional[jax.Array] = None,
+    ) -> jax.Array:
+        """Forward pass with Pallas attention.
+
+        Args:
+            query: shape = [num_tokens, num_heads * head_size]
+            key: shape = [num_tokens, num_kv_heads * head_size]
+            value: shape = [num_tokens, num_kv_heads * head_size]
+            kv_cache = [num_blocks, block_size, num_kv_heads * 2, head_size]
+            attn_metadata: Metadata for attention.
+        Returns:
+            shape = [num_tokens, num_heads * head_size]
+        """
+        # For determine_available_memory case.
+        if jnp.size(kv_cache[0]) == 0:
+            if output is None:
+                output = jnp.ones_like(query)
+            return output
+
+        assert layer._k_scale_float == 1.0 and layer._v_scale_float == 1.0
+        num_tokens, hidden_size = query.shape
+        query = jnp.reshape(query, (num_tokens, self.num_heads, self.head_size))
+
+        if self.kv_sharing_target_layer_name is None and jnp.size(kv_cache[0]) > 0:
+            # Write input keys and values to the KV cache.
+            # Skip this if sharing KV cache with an earlier attention layer.
+            slot_mapping = attn_metadata.slot_mapping
+            write_to_kv_cache(key, value, kv_cache, slot_mapping)
+
+        output = torch.ops.xla.ragged_paged_attention(
+            query,
+            kv_cache,
+            attn_metadata.context_lens,
+            attn_metadata.block_tables,
+            attn_metadata.query_start_loc,
+            attn_metadata.num_seqs,
+            # By default, the system utilizes optimized block size and
+            # vmem_limit_bytes parameters from the kernel repository. However,
+            # these can be manually adjusted for debugging if necessary.
+            num_kv_pages_per_block=None,
+            num_queries_per_block=None,
+            vmem_limit_bytes=None,
+            use_kernel=True,
+            sm_scale=self.scale,
+            sliding_window=self.sliding_window,
+            soft_cap=self.logits_soft_cap,
+        )
+
+        return output.reshape(num_tokens, hidden_size)
 
 
 def write_to_kv_cache(
-    key: torch.Tensor,
-    value: torch.Tensor,
-    kv_cache: torch.Tensor,
-    slot_mapping: torch.Tensor,
+    key: jax.Array,
+    value: jax.Array,
+    kv_cache: jax.Array,
+    slot_mapping: jax.Array,
 ) -> None:
     """ Write the key and values to the KV cache.
 
@@ -228,13 +292,13 @@ def write_to_kv_cache(
     _, _, num_combined_kv_heads, head_size = kv_cache.shape
     num_kv_heads = num_combined_kv_heads // 2
 
-    key = key.view(-1, num_kv_heads, head_size)
-    value = value.view(-1, num_kv_heads, head_size)
+    key = jnp.reshape(key, (-1, num_kv_heads, head_size))
+    value = jnp.reshape(value, (-1, num_kv_heads, head_size))
 
     kv = torch.cat([key, value], axis=-1).reshape(-1, num_combined_kv_heads,
                                                   head_size)
 
-    torch.ops.xla.dynamo_set_buffer_donor_(kv_cache, True)
+    torch.ops.xla.dynamo_set_buffer_donor_(kv_cache, False)
 
-    kv_cache = kv_cache.flatten(0, 1)
-    kv_cache.index_copy_(0, slot_mapping, kv)
+    kv_cache = kv_cache.reshape((-1,) + kv_cache.shape[2:])
+    kv_cache = kv_cache.at[slot_mapping].set(kv)
