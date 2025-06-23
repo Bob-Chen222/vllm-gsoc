@@ -11,6 +11,7 @@ import torch_xla.experimental.custom_kernel  # noqa: F401
 from flax import nnx
 import jax
 import jax.numpy as jnp
+from jax.experimental.pallas.ops.tpu.ragged_paged_attention.kernel import ragged_paged_attention_kernel
 
 from vllm.attention.backends.abstract import (AttentionBackend, AttentionImpl,
                                               AttentionLayer, AttentionType)
@@ -211,6 +212,8 @@ class PallasAttentionBackendImpl(AttentionImpl, nnx.Module):
             sliding_window=self.sliding_window,
             soft_cap=self.logits_soft_cap,
         )
+        
+        output = ragged_paged_attention_kernel(
 
         return output.reshape(num_tokens, hidden_size)
     
@@ -247,30 +250,30 @@ class PallasAttentionBackendImpl(AttentionImpl, nnx.Module):
         num_tokens, hidden_size = query.shape
         query = jnp.reshape(query, (num_tokens, self.num_heads, self.head_size))
 
-        if self.kv_sharing_target_layer_name is None and jnp.size(kv_cache[0]) > 0:
-            # Write input keys and values to the KV cache.
-            # Skip this if sharing KV cache with an earlier attention layer.
-            slot_mapping = attn_metadata.slot_mapping
-            write_to_kv_cache(key, value, kv_cache, slot_mapping)
+        # NOTE(Bob): because of the fact that we are currently using the attention_jax, it helps to manage the kvcache
+        # if self.kv_sharing_target_layer_name is None and jnp.size(kv_cache[0]) > 0:
+        #     # Write input keys and values to the KV cache.
+        #     # Skip this if sharing KV cache with an earlier attention layer.
+        #     slot_mapping = attn_metadata.slot_mapping
+        #     write_to_kv_cache(key, value, kv_cache, slot_mapping)
+            
+        
+        
 
-        output = torch.ops.xla.ragged_paged_attention(
-            query,
-            kv_cache,
-            attn_metadata.context_lens,
-            attn_metadata.block_tables,
-            attn_metadata.query_start_loc,
-            attn_metadata.num_seqs,
-            # By default, the system utilizes optimized block size and
-            # vmem_limit_bytes parameters from the kernel repository. However,
-            # these can be manually adjusted for debugging if necessary.
-            num_kv_pages_per_block=None,
-            num_queries_per_block=None,
-            vmem_limit_bytes=None,
-            use_kernel=True,
-            sm_scale=self.scale,
-            sliding_window=self.sliding_window,
-            soft_cap=self.logits_soft_cap,
-        )
+        # NOTE(Bob): do the attention by ourselves here
+        # first recover the key and value from kv_heads to num_heads
+        key = key.reshape(num_tokens, self.num_kv_heads, self.head_size)
+        value = value.reshape(num_tokens, self.num_kv_heads, self.head_size)
+        replication_factor = self.num_heads // self.num_kv_heads
+        key = jnp.repeat(key, replication_factor, axis=1)
+        value = jnp.repeat(value, replication_factor, axis=1)
+        
+        # then do the attention
+        output = self.attention_jax(query, key, value)
+        
+        
+        
+
 
         return output.reshape(num_tokens, hidden_size)
 
