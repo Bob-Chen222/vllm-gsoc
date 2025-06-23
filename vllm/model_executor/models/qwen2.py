@@ -31,6 +31,10 @@ import torch
 from torch import nn
 from transformers import Qwen2Config
 
+from flax import nnx
+import jax
+import jax.numpy as jnp
+
 from vllm.attention import Attention, AttentionType
 from vllm.compilation.decorators import support_torch_compile
 from vllm.config import CacheConfig, VllmConfig
@@ -185,6 +189,25 @@ class Qwen2Attention(nn.Module):
         attn_output = self.attn(q, k, v)
         output, _ = self.o_proj(attn_output)
         return output
+    
+    def __call__(
+        self,
+        positions: jax.Array,
+        hidden_states: jax.Array,
+    ) -> jax.Array:
+        qkv, _ = self.qkv_proj(hidden_states)
+        
+        q_size = self.q_size
+        kv_size = self.kv_size
+        q = qkv[..., :q_size]
+        k = qkv[..., q_size:q_size + kv_size]
+        v = qkv[..., q_size + kv_size:]
+        
+        q, k = self.rotary_emb(positions, q, k)
+        attn_output = self.attn(q, k, v)
+        output, _ = self.o_proj(attn_output)
+        return output
+        
 
 
 class Qwen2DecoderLayer(nn.Module):
