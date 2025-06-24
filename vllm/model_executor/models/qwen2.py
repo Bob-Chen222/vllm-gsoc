@@ -210,7 +210,7 @@ class Qwen2Attention(nn.Module):
         
 
 
-class Qwen2DecoderLayer(nn.Module):
+class Qwen2DecoderLayer(nnx.Module):
 
     def __init__(
         self,
@@ -296,7 +296,7 @@ class Qwen2DecoderLayer(nn.Module):
         "intermediate_tensors": 0,
         "inputs_embeds": 0,
     })
-class Qwen2Model(nn.Module):
+class Qwen2Model(nnx.Module):
 
     def __init__(self,
                  *,
@@ -334,6 +334,7 @@ class Qwen2Model(nn.Module):
                 prefix=f"{prefix}.embed_tokens",
             )
         else:
+            assert False, "Not implemented for jax"
             self.embed_tokens = PPMissingLayer()
 
         # Use the provided decoder layer type or default to Qwen2DecoderLayer
@@ -353,6 +354,7 @@ class Qwen2Model(nn.Module):
         if get_pp_group().is_last_rank:
             self.norm = RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
         else:
+            assert False, "Not implemented for jax"
             self.norm = PPMissingLayer()
 
     def get_input_embeddings(self, input_ids: torch.Tensor) -> torch.Tensor:
@@ -390,7 +392,7 @@ class Qwen2Model(nn.Module):
         return hidden_states
 
     def load_weights(self, weights: Iterable[tuple[str,
-                                                   torch.Tensor]]) -> set[str]:
+                                                   jax.Array]]) -> set[str]:
         stacked_params_mapping = [
             # (param_name, shard_name, shard_id)
             ("qkv_proj", "q_proj", "q"),

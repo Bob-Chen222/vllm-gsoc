@@ -49,7 +49,11 @@ def initialize_model(
     if model_config is None:
         model_config = vllm_config.model_config
     if model_class is None:
-        model_class, _ = get_model_architecture(model_config)
+        # NOTE(Bob): this is a hack
+        # model_class, _ = get_model_architecture(model_config)
+        # Hardcode override to Qwen2ForCausalLM per custom requirement.
+        from vllm.model_executor.models.qwen2 import Qwen2ForCausalLM
+        model_class = Qwen2ForCausalLM
 
     if vllm_config.quant_config is not None:
         configure_quant_config(vllm_config.quant_config, model_class)
