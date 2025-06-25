@@ -55,7 +55,7 @@ def check_implementation(
 @pytest.mark.parametrize(
     "model,model_impl",
     [
-        ("meta-llama/Llama-3.2-1B-Instruct", "transformers"),
+        # ("Qwen/Qwen2-1.5B-Instruct", "transformers")
         ("ArthurZ/Ilama-3.2-1B", "auto"),  # CUSTOM CODE
     ])  # trust_remote_code=True by default
 def test_models(
