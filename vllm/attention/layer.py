@@ -28,7 +28,7 @@ from vllm.utils import direct_register_custom_op
 from vllm.v1.attention.backends.utils import validate_kv_sharing_target
 
 
-class Attention(nnx.Module, nn.Module):
+class Attention(nnx.Module):
     """Attention layer.
 
     This class takes query, key, and value tensors as input. The input tensors
