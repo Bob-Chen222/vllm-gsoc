@@ -11,6 +11,8 @@ import torch.nn as nn
 from torch.func import functional_call
 from transformers import PretrainedConfig
 
+from flax import nnx
+
 import vllm.envs as envs
 from vllm.config import VllmConfig
 from vllm.logger import init_logger
@@ -504,7 +506,7 @@ def merge_multimodal_embeddings(
 
 class LayerFn(Protocol):
 
-    def __call__(self, prefix: str) -> torch.nn.Module:
+    def __call__(self, prefix: str) -> nnx.Module:
         ...
 
 
@@ -613,7 +615,7 @@ def make_layers(
     num_hidden_layers: int,
     layer_fn: LayerFn,
     prefix: str,
-) -> tuple[int, int, torch.nn.ModuleList]:
+) -> tuple[int, int, list[nnx.Module]]:
     """Make a list of layers with the given layer function, taking
     pipeline parallelism into account.
     """
@@ -622,11 +624,11 @@ def make_layers(
     start_layer, end_layer = get_pp_indices(num_hidden_layers,
                                             get_pp_group().rank_in_group,
                                             get_pp_group().world_size)
-    modules = torch.nn.ModuleList(
-        [PPMissingLayer() for _ in range(start_layer)] + [
-            maybe_offload_to_cpu(layer_fn(prefix=f"{prefix}.{idx}"))
-            for idx in range(start_layer, end_layer)
-        ] + [PPMissingLayer() for _ in range(end_layer, num_hidden_layers)])
+    # NOTE (Bob): this is a hack for now
+    modules = [
+        layer_fn(prefix=f"{prefix}.{idx}")
+        for idx in range(start_layer, end_layer)
+    ]
     return start_layer, end_layer, modules
 
 
