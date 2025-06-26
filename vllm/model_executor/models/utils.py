@@ -95,7 +95,7 @@ class AutoWeightsLoader:
 
     def __init__(
         self,
-        module: nn.Module,
+        module: nnx.Module,
         *,
         skip_prefixes: Optional[list[str]] = None,
         skip_substrs: Optional[list[str]] = None,
@@ -199,8 +199,8 @@ class AutoWeightsLoader:
     def _load_module(
         self,
         base_prefix: str,
-        module: nn.Module,
-        weights: Iterable[tuple[str, torch.Tensor]],
+        module: nnx.Module,
+        weights: Iterable[tuple[str, jax.Array]],
     ) -> Iterable[str]:
         if isinstance(module, PPMissingLayer):
             return
