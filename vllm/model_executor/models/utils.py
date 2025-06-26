@@ -12,6 +12,8 @@ from torch.func import functional_call
 from transformers import PretrainedConfig
 
 from flax import nnx
+import jax
+import jax.numpy as jnp
 
 import vllm.envs as envs
 from vllm.config import VllmConfig
@@ -267,7 +269,7 @@ class AutoWeightsLoader:
 
     def load_weights(
         self,
-        weights: Iterable[tuple[str, torch.Tensor]],
+        weights: Iterable[tuple[str, jax.Array]],
         *,
         mapper: Optional[WeightsMapper] = None,
     ) -> set[str]:

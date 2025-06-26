@@ -5,6 +5,10 @@ from abc import ABC, abstractmethod
 import torch
 import torch.nn as nn
 
+from flax import nnx
+import jax
+import jax as jnp
+
 from vllm.config import LoadConfig, ModelConfig, VllmConfig
 from vllm.model_executor.model_loader.utils import (
     initialize_model, process_weights_after_loading, set_default_torch_dtype)
@@ -22,14 +26,14 @@ class BaseModelLoader(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    def load_weights(self, model: nn.Module,
+    def load_weights(self, model: nnx.Module,
                      model_config: ModelConfig) -> None:
         """Load weights into a model. This standalone API allows 
         inplace weights loading for an already-initialized model"""
         raise NotImplementedError
 
     def load_model(self, vllm_config: VllmConfig,
-                   model_config: ModelConfig) -> nn.Module:
+                   model_config: ModelConfig) -> nnx.Module:
         """Load a model with the given configurations."""
         device_config = vllm_config.device_config
         target_device = torch.device(device_config.device)

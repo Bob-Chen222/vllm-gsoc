@@ -12,6 +12,10 @@ import torch
 from torch import nn
 from transformers.utils import SAFE_WEIGHTS_INDEX_NAME
 
+from flax import nnx
+import jax
+import jax.numpy as jnp
+
 from vllm import envs
 from vllm.config import LoadConfig, LoadFormat, ModelConfig
 from vllm.logger import init_logger
@@ -237,7 +241,7 @@ class DefaultModelLoader(BaseModelLoader):
     def get_all_weights(
         self,
         model_config: ModelConfig,
-        model: nn.Module,
+        model: nnx.Module,
     ) -> Generator[tuple[str, torch.Tensor], None, None]:
         primary_weights = DefaultModelLoader.Source(
             model_config.model,
@@ -263,7 +267,7 @@ class DefaultModelLoader(BaseModelLoader):
                               fall_back_to_pt=True,
                               allow_patterns_overrides=None)
 
-    def load_weights(self, model: nn.Module,
+    def load_weights(self, model: nnx.Module,
                      model_config: ModelConfig) -> None:
         weights_to_load = {name for name, _ in model.named_parameters()}
         loaded_weights = model.load_weights(

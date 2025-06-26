@@ -13,6 +13,10 @@ import transformers
 from torch import nn
 from transformers.dynamic_module_utils import get_class_from_dynamic_module
 
+from flax import nnx
+import jax
+from jax import numpy as jnp
+
 from vllm.attention import Attention
 from vllm.config import (ModelConfig, ModelImpl, VllmConfig,
                          set_current_vllm_config)
@@ -42,9 +46,9 @@ def initialize_model(
     vllm_config: VllmConfig,
     *,
     prefix: str = "",
-    model_class: Optional[type[nn.Module]] = None,
+    model_class: Optional[type[nnx.Module]] = None,
     model_config: Optional[ModelConfig] = None,
-) -> nn.Module:
+) -> nnx.Module:
     """Initialize a model with the given configurations."""
     if model_config is None:
         model_config = vllm_config.model_config
