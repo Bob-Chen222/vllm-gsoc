@@ -479,8 +479,8 @@ class Qwen2Model(nnx.Module):
             loaded_params.add(name)
         return loaded_params
 
-
-class Qwen2ForCausalLM(nn.Module, SupportsLoRA, SupportsPP):
+# NOTE (Bob): this is a hack for now, I just disabled lora and ppsupport from inherited by qwen
+class Qwen2ForCausalLM(nnx.Module):
     packed_modules_mapping = {
         "qkv_proj": [
             "q_proj",
@@ -494,7 +494,7 @@ class Qwen2ForCausalLM(nn.Module, SupportsLoRA, SupportsPP):
     }
 
     def __init__(self, *, vllm_config: VllmConfig, prefix: str = ""):
-        super().__init__()
+        # super().__init__()
         config = vllm_config.model_config.hf_config
         quant_config = vllm_config.quant_config
         lora_config = vllm_config.lora_config

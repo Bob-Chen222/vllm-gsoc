@@ -221,8 +221,12 @@ class AutoWeightsLoader:
                         loaded_params,
                     )
 
-        child_modules = dict(module.named_children())
-        child_params = dict(module.named_parameters(recurse=False))
+        # child_modules = dict(module.named_children())
+        # child_params = dict(module.named_parameters(recurse=False))
+        graph_def, state = nnx.split(module)
+
+        # print("child_modules:", child_modules)
+        # print("child_params:", child_params)
 
         # Add missing tensors the weight loader needs to be able to load
         # that aren't registered as params, e.g., batchnorm statistics.
