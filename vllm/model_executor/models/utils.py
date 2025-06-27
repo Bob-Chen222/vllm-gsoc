@@ -63,8 +63,8 @@ class WeightsMapper:
         return key
 
     def apply(
-        self, weights: Iterable[tuple[str, torch.Tensor]]
-    ) -> Iterable[tuple[str, torch.Tensor]]:
+        self, weights: Iterable[tuple[str, jax.Array]]
+    ) -> Iterable[tuple[str, jax.Array]]:
         return ((out_name, data) for name, data in weights
                 if (out_name := self._map_name(name)) is not None)
 
@@ -146,8 +146,8 @@ class AutoWeightsLoader:
     def _load_param(
         self,
         base_prefix: str,
-        param: nn.Parameter,
-        weights: Iterable[tuple[str, torch.Tensor]],
+        param: nnx.Param,
+        weights: Iterable[tuple[str, jax.Array]],
     ) -> Iterable[str]:
         for weight_name, weight_data in weights:
             weight_qualname = self._get_qualname(base_prefix, weight_name)
