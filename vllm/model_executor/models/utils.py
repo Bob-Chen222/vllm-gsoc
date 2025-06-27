@@ -226,7 +226,9 @@ class AutoWeightsLoader:
 
         # Add missing tensors the weight loader needs to be able to load
         # that aren't registered as params, e.g., batchnorm statistics.
-        self._add_loadable_non_param_tensors(module, child_params)
+        
+        # NOTE (Bob): this is not implemented for jax
+        # self._add_loadable_non_param_tensors(module, child_params)
 
         for child_prefix, child_weights in self._groupby_prefix(weights):
             prefix = self._get_qualname(base_prefix, child_prefix)

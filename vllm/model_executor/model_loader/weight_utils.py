@@ -17,6 +17,8 @@ import filelock
 import gguf
 import huggingface_hub.constants
 import numpy as np
+import jax
+import jax.numpy as jnp
 import torch
 from huggingface_hub import HfFileSystem, hf_hub_download, snapshot_download
 from safetensors.torch import load_file, safe_open, save_file
@@ -458,7 +460,7 @@ def np_cache_weights_iterator(
 def safetensors_weights_iterator(
     hf_weights_files: list[str],
     use_tqdm_on_load: bool,
-) -> Generator[tuple[str, torch.Tensor], None, None]:
+) -> Generator[tuple[str, jax.Array], None, None]:
     """Iterate over the weights in the model safetensor files."""
     for st_file in tqdm(
             hf_weights_files,
@@ -466,7 +468,7 @@ def safetensors_weights_iterator(
             disable=not enable_tqdm(use_tqdm_on_load),
             bar_format=_BAR_FORMAT,
     ):
-        with safe_open(st_file, framework="pt") as f:
+        with safe_open(st_file, framework="jax") as f:
             for name in f.keys():  # noqa: SIM118
                 param = f.get_tensor(name)
                 yield name, param
