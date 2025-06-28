@@ -45,7 +45,7 @@ class LogitsProcessor(nnx.Module):
         Args:
             scale: A scaling factor to apply to the logits.
         """
-        super().__init__()
+        # super().__init__()
         self.scale = scale
         self.vocab_size = vocab_size
         # Whether the input is logits (default is hidden states).
