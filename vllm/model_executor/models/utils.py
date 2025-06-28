@@ -227,22 +227,12 @@ class AutoWeightsLoader:
         # child_modules = dict(module.named_children())
         # child_params = dict(module.named_parameters(recurse=False))
 
-        old_stdout = sys.stdout
-        sys.stdout = StringIO()
-        
         graph_def, state = nnx.split(module)
-
-        nnx.display(graph_def, state)
-
-        # Get output and write to file
-        output = sys.stdout.getvalue()
-        sys.stdout = old_stdout
-
-        with open("output.txt", "w") as f:
-            f.write(output)
 
         # print("child_modules:", child_modules)
         # print("child_params:", child_params)
+
+        state.to_pure_dict()
 
         # Add missing tensors the weight loader needs to be able to load
         # that aren't registered as params, e.g., batchnorm statistics.
