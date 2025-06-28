@@ -211,8 +211,10 @@ class AutoWeightsLoader:
         # Avoid infinite recursion since this function is typically
         # called inside load_weights of the module itself
         if module != self.module:
+            print("are we here?")
             module_load_weights = getattr(module, "load_weights", None)
             if callable(module_load_weights):
+                print("are we callable?")
                 loaded_params = module_load_weights(weights)
                 if loaded_params is None:
                     logger.warning(
@@ -235,8 +237,6 @@ class AutoWeightsLoader:
         child_modules = state.to_pure_dict()
         child_params = nnx.state(module, nnx.Param)
 
-        first_key = next(iter(child_modules))  # Get the first key
-        child_modules = child_modules[first_key]
 
         # Add missing tensors the weight loader needs to be able to load
         # that aren't registered as params, e.g., batchnorm statistics.
