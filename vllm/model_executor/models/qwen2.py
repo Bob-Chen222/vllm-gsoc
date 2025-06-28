@@ -98,7 +98,7 @@ class Qwen2MLP(nnx.Module):
         return x
 
 
-class Qwen2Attention(nn.Module):
+class Qwen2Attention(nnx.Module):
 
     def __init__(
         self,

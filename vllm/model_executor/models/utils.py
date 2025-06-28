@@ -24,6 +24,9 @@ from vllm.sequence import IntermediateTensors
 from vllm.utils import (get_cuda_view_from_cpu_tensor, is_pin_memory_available,
                         is_uva_available)
 
+from io import StringIO
+import sys
+
 logger = init_logger(__name__)
 
 WeightsMapping = Mapping[str, Optional[str]]
@@ -223,7 +226,20 @@ class AutoWeightsLoader:
 
         # child_modules = dict(module.named_children())
         # child_params = dict(module.named_parameters(recurse=False))
+
+        old_stdout = sys.stdout
+        sys.stdout = StringIO()
+        
         graph_def, state = nnx.split(module)
+
+        nnx.display(graph_def, state)
+
+        # Get output and write to file
+        output = sys.stdout.getvalue()
+        sys.stdout = old_stdout
+
+        with open("output.txt", "w") as f:
+            f.write(output)
 
         # print("child_modules:", child_modules)
         # print("child_params:", child_params)
