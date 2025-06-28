@@ -437,6 +437,7 @@ class Qwen2Model(nnx.Module):
         print("params_dict:", params_dict.keys())
         loaded_params: set[str] = set()
         for name, loaded_weight in weights:
+            print("name:", name)
             if "rotary_emb.inv_freq" in name:
                 continue
             if (self.quant_config is not None and
