@@ -235,6 +235,9 @@ class AutoWeightsLoader:
         child_modules = state.to_pure_dict()
         child_params = nnx.state(module, nnx.Param)
 
+        first_key = next(iter(child_modules))  # Get the first key
+        child_modules = child_modules[first_key]
+
         # Add missing tensors the weight loader needs to be able to load
         # that aren't registered as params, e.g., batchnorm statistics.
         
@@ -243,6 +246,10 @@ class AutoWeightsLoader:
 
         for child_prefix, child_weights in self._groupby_prefix(weights):
             prefix = self._get_qualname(base_prefix, child_prefix)
+
+            print("prefix:", prefix)
+            print("child_prefix:", child_prefix)
+            print("child_modules keys:", child_modules.keys())
 
             if child_prefix in child_modules:
                 if self._can_skip(prefix + "."):
