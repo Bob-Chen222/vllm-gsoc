@@ -433,7 +433,8 @@ class Qwen2Model(nnx.Module):
             ("gate_up_proj", "gate_proj", 0),
             ("gate_up_proj", "up_proj", 1),
         ]
-        params_dict = dict(self.named_parameters(remove_duplicate=False))
+        params_dict = nnx.state(self, nnx.Param)
+        print("params_dict:", params_dict.keys())
         loaded_params: set[str] = set()
         for name, loaded_weight in weights:
             if "rotary_emb.inv_freq" in name:
@@ -470,8 +471,8 @@ class Qwen2Model(nnx.Module):
                 name = maybe_remap_kv_scale_name(name, params_dict)
                 if name is None:
                     continue
-                if is_pp_missing_parameter(name, self):
-                    continue
+                # if is_pp_missing_parameter(name, self):
+                #     continue
                 param = params_dict[name]
                 weight_loader = getattr(param, "weight_loader",
                                         default_weight_loader)
