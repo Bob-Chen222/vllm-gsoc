@@ -232,7 +232,8 @@ class AutoWeightsLoader:
         # print("child_modules:", child_modules)
         # print("child_params:", child_params)
 
-        state.to_pure_dict()
+        child_modules = state.to_pure_dict()
+        child_params = nnx.state(module, nnx.Param)
 
         # Add missing tensors the weight loader needs to be able to load
         # that aren't registered as params, e.g., batchnorm statistics.
