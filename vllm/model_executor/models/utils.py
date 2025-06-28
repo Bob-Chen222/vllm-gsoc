@@ -241,7 +241,9 @@ class AutoWeightsLoader:
                                              child_modules[child_prefix],
                                              child_weights)
             elif child_prefix in child_params:
+                print("are we here?")
                 if self._can_skip(prefix):
+                    print("are we skipped?")
                     logger.debug("Skipping param %s", prefix)
 
                     continue
