@@ -375,8 +375,11 @@ class Qwen2Model(nn.Module):
             ("gate_up_proj", "up_proj", 1),
         ]
         params_dict = dict(self.named_parameters(remove_duplicate=False))
+        with open("param_dict_std.txt", "w") as f:
+            f.write(", ".join(params_dict.keys()))
         loaded_params: set[str] = set()
         for name, loaded_weight in weights:
+            print("name:", name)
             if "rotary_emb.inv_freq" in name:
                 continue
             if (self.quant_config is not None and
