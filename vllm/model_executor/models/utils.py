@@ -227,6 +227,10 @@ class AutoWeightsLoader:
         for child_prefix, child_weights in self._groupby_prefix(weights):
             prefix = self._get_qualname(base_prefix, child_prefix)
 
+            print("prefix:", prefix)
+            print("child_prefix:", child_prefix)
+            print("child_modules keys:", child_modules.keys())
+
             if child_prefix in child_modules:
                 if self._can_skip(prefix + "."):
                     logger.debug("Skipping module %s", prefix)
