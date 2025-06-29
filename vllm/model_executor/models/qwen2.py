@@ -461,12 +461,20 @@ class Qwen2Model(nnx.Module):
                 if is_pp_missing_parameter(name, self):
                     continue
                 param : nnx.State = params_dict[name_list[0]]
+                layer_num = -1
                 if len(name_list) > 1:
                     for n in name_list[1:]:
                         key = int(n) if n.isdigit() else n
+                        layer_num = key
                         param = param[key]
-                weight_loader = param.weight_loader
-                weight_loader(param, loaded_weight, shard_id)
+
+                # NOTE(Bob): let's just get a hack for the weightloader
+                if "gate" in name:
+                    self.layers[layer_num].mlp.gate_up_proj.weight_loader(param, loaded_weight, shard_id)
+                elif "qkv_proj" in name:
+                    self.layers[layer_num].self_attn.qkv_proj.weight_loader(param, loaded_weight, shard_id)
+                else:
+                    raise RuntimeError("never going to happen")
                 break
             else:
                 # Skip loading extra bias for GPTQ models.
