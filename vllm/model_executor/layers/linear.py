@@ -1174,7 +1174,7 @@ class QKVParallelLinear(ColumnParallelLinear):
                     "for all partitions.")
 
         assert param_data.shape == loaded_weight.shape
-        param.value = loaded_weight
+        param.value = jax.lax.dynamic_update_slice(param.value, loaded_weight, (shard_offset,))
 
 
 class RowParallelLinear(LinearBase):
