@@ -458,8 +458,8 @@ class Qwen2Model(nnx.Module):
                 # Skip loading extra bias for GPTQ models.
                 if name.endswith(".bias") and name not in params_dict:
                     continue
-                if is_pp_missing_parameter(name, self):
-                    continue
+                # if is_pp_missing_parameter(name, self):
+                #     continue
                 param : nnx.State = params_dict[name_list[0]]
                 layer_num = -1
                 if len(name_list) > 1:
