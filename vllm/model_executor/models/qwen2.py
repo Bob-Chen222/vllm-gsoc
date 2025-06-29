@@ -59,6 +59,7 @@ from .utils import (AutoWeightsLoader, PPMissingLayer, extract_layer_index,
                     is_pp_missing_parameter,
                     make_empty_intermediate_tensors_factory, make_layers,
                     maybe_prefix)
+from itertools import islice
 
 
 class Qwen2MLP(nnx.Module):
@@ -437,8 +438,12 @@ class Qwen2Model(nnx.Module):
         with open("../param_dict.txt", "w") as f:
             f.write(str(params_dict.keys()))
         loaded_params: set[str] = set()
+
+        first_four = list(islice(weights, 4))
+        # Print their names
+        for name, _ in first_four:
+            print(name)
         for name, loaded_weight in weights:
-            print("name:", name)
             if "rotary_emb.inv_freq" in name:
                 continue
             if (self.quant_config is not None and
