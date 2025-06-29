@@ -19,6 +19,7 @@ import huggingface_hub.constants
 import numpy as np
 import jax
 import jax.numpy as jnp
+from flax import nnx
 import torch
 from huggingface_hub import HfFileSystem, hf_hub_download, snapshot_download
 from safetensors.torch import load_file, safe_open, save_file
@@ -603,21 +604,22 @@ def convert_pyslice_to_tensor(x: Any) -> torch.Tensor:
     return x
 
 
-def default_weight_loader(param: torch.Tensor,
-                          loaded_weight: torch.Tensor) -> None:
+def default_weight_loader(param: nnx.State,
+                          loaded_weight: jax.Array) -> None:
     """Default weight loader."""
     try:
-        if param.numel() == 1 and loaded_weight.numel() == 1:
+        if param["weight"].value.size == 1 and loaded_weight.value.size == 1:
             # Sometimes scalar values aren't considered tensors with shapes
             # so if both param and loaded_weight are a scalar,
             # "broadcast" instead of copy
-            param.data.fill_(loaded_weight.item())
+            param["weight"].value = jnp.full_like(param["weight"].value, loaded_weight.item())
         else:
-            assert param.size() == loaded_weight.size(), (
-                f"Attempted to load weight ({loaded_weight.size()}) "
-                f"into parameter ({param.size()})")
+            assert param["weight"].value.shape == loaded_weight.shape, (
+                f"Attempted to load weight ({loaded_weight.shape}) "
+                f"into parameter ({param['weight'].value.shape})"
+            )
 
-            param.data.copy_(loaded_weight)
+            param["weight"].value = loaded_weight
     except Exception:
         # NOTE: This exception is added for the purpose of setting breakpoint to
         # debug weight loading issues.
