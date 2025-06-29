@@ -59,7 +59,6 @@ from .utils import (AutoWeightsLoader, PPMissingLayer, extract_layer_index,
                     is_pp_missing_parameter,
                     make_empty_intermediate_tensors_factory, make_layers,
                     maybe_prefix)
-from itertools import islice
 
 
 class Qwen2MLP(nnx.Module):
@@ -434,22 +433,14 @@ class Qwen2Model(nnx.Module):
             ("gate_up_proj", "gate_proj", 0),
             ("gate_up_proj", "up_proj", 1),
         ]
-        params_dict = dict(nnx.state(self))
-        # with open("../param_dict.txt", "w") as f:
-        #     f.write(str(params_dict))
+        params_dict = nnx.state(self, nnx.Param)
+        print("params_dict:", params_dict.keys())
         loaded_params: set[str] = set()
-
-        # first_four = list(islice(weights, 4))
-        # # Print their names
-        # for name, _ in first_four:
-        #     print(name)
         for name, loaded_weight in weights:
-            name_list = name.split(".")[1:-1]
             if "rotary_emb.inv_freq" in name:
                 continue
             if (self.quant_config is not None and
                 (scale_name := self.quant_config.get_cache_scale(name))):
-                assert False, "Quantization scales are not supported in JAX for now."
                 # Loading kv cache quantization scales
                 param = params_dict[scale_name]
                 weight_loader = getattr(param, "weight_loader",
@@ -466,9 +457,9 @@ class Qwen2Model(nnx.Module):
                 # Skip loading extra bias for GPTQ models.
                 if name.endswith(".bias") and name not in params_dict:
                     continue
-                # if is_pp_missing_parameter(name, self):
-                #     continue
-                param : nnx.State = params_dict[name]
+                if is_pp_missing_parameter(name, self):
+                    continue
+                param = params_dict[name]
                 weight_loader = param.weight_loader
                 weight_loader(param, loaded_weight, shard_id)
                 break
@@ -482,12 +473,7 @@ class Qwen2Model(nnx.Module):
                     continue
                 # if is_pp_missing_parameter(name, self):
                 #     continue
-                param : nnx.State = params_dict[name_list[0]]
-                if len(name_list) > 1:
-                    for n in name_list[1:]:
-                        key = int(n) if n.isdigit() else n
-                        param = param[key]
-                # recursively apply the name_list to the state
+                param = params_dict[name]
                 weight_loader = getattr(param, "weight_loader",
                                         default_weight_loader)
                 weight_loader(param, loaded_weight)
