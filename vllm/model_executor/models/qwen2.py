@@ -433,7 +433,7 @@ class Qwen2Model(nnx.Module):
             ("gate_up_proj", "gate_proj", 0),
             ("gate_up_proj", "up_proj", 1),
         ]
-        params_dict = nnx.state(self)
+        params_dict = dict(nnx.state(self))
         with open("../param_dict.txt", "w") as f:
             f.write(str(params_dict.keys()))
         loaded_params: set[str] = set()
