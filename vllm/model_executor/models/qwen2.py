@@ -381,10 +381,12 @@ class Qwen2Model(nn.Module):
         for name, loaded_weight in weights:
             print("name:", name)
             if "rotary_emb.inv_freq" in name:
+                print("rotary skipped")
                 continue
             if (self.quant_config is not None and
                 (scale_name := self.quant_config.get_cache_scale(name))):
                 # Loading kv cache quantization scales
+                print("shouldn't be here")
                 param = params_dict[scale_name]
                 weight_loader = getattr(param, "weight_loader",
                                         default_weight_loader)
@@ -403,10 +405,13 @@ class Qwen2Model(nn.Module):
                 if is_pp_missing_parameter(name, self):
                     continue
                 param = params_dict[name]
+                print("param:", param)
+                print("param_name:", param_name)
                 weight_loader = param.weight_loader
                 weight_loader(param, loaded_weight, shard_id)
                 break
             else:
+                print("not stacked params")
                 # Skip loading extra bias for GPTQ models.
                 if name.endswith(".bias") and name not in params_dict:
                     continue
