@@ -733,7 +733,7 @@ class MergedColumnParallelLinear(ColumnParallelLinear):
                     "the same for all partitions.")
 
         assert param_data.shape == loaded_weight.shape
-        param.value = loaded_weight
+        param.value = jax.lax.dynamic_update_slice(param.value, loaded_weight, (shard_offset,))
 
     def _load_fused_module_from_checkpoint(self, param: BasevLLMParameter,
                                            loaded_weight: torch.Tensor):
