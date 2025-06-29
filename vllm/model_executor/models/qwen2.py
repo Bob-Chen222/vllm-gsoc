@@ -437,6 +437,7 @@ class Qwen2Model(nnx.Module):
         print("params_dict:", params_dict.keys())
         loaded_params: set[str] = set()
         for name, loaded_weight in weights:
+            name_list = name.split(".")[1:-1]
             if "rotary_emb.inv_freq" in name:
                 continue
             if (self.quant_config is not None and
@@ -459,7 +460,11 @@ class Qwen2Model(nnx.Module):
                     continue
                 if is_pp_missing_parameter(name, self):
                     continue
-                param = params_dict[name]
+                param : nnx.State = params_dict[name_list[0]]
+                if len(name_list) > 1:
+                    for n in name_list[1:]:
+                        key = int(n) if n.isdigit() else n
+                        param = param[key]
                 weight_loader = param.weight_loader
                 weight_loader(param, loaded_weight, shard_id)
                 break
@@ -473,7 +478,12 @@ class Qwen2Model(nnx.Module):
                     continue
                 # if is_pp_missing_parameter(name, self):
                 #     continue
-                param = params_dict[name]
+                param : nnx.State = params_dict[name_list[0]]
+                if len(name_list) > 1:
+                    for n in name_list[1:]:
+                        key = int(n) if n.isdigit() else n
+                        param = param[key]
+
                 weight_loader = getattr(param, "weight_loader",
                                         default_weight_loader)
                 weight_loader(param, loaded_weight)
