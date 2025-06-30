@@ -15,6 +15,8 @@ from typing import (TYPE_CHECKING, Any, Callable, Generic, Optional, TypeVar,
                     Union, overload)
 
 import msgspec
+import jax
+import jax.numpy as jnp
 import torch
 import zmq
 
@@ -642,9 +644,9 @@ def shutdown(procs: list[BaseProcess]):
 
 
 def bind_kv_cache(
-    kv_caches: dict[str, torch.Tensor],
+    kv_caches: dict[str, jax.Array],
     forward_context: dict[str, "Attention"],
-    runner_kv_caches: list[torch.Tensor],
+    runner_kv_caches: list[jax.Array],
 ) -> None:
     """
     Bind the allocated KV cache to both ModelRunner and forward context so

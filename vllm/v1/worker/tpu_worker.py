@@ -11,6 +11,10 @@ import torch_xla.core.xla_model as xm
 import torch_xla.debug.profiler as xp
 import torch_xla.runtime as xr
 
+import jax
+import jax.numpy as jnp
+from flax import nnx
+
 import vllm.envs as envs
 from vllm.config import ParallelConfig, VllmConfig
 from vllm.distributed import (ensure_model_parallel_initialized,
@@ -151,11 +155,13 @@ class TPUWorker:
             report_usage_stats(self.vllm_config)
 
     def determine_available_memory(self) -> int:
-        kv_caches: dict[str, torch.Tensor] = {}
+        # NOTE(Bob): why is it a dict though?
+        kv_caches: dict[str, jax.Array] = {}
         kv_cache_spec = self.model_runner.get_kv_cache_spec()
         for layer_name, layer_spec in kv_cache_spec.items():
             if isinstance(layer_spec, AttentionSpec):
-                dtype = layer_spec.dtype
+                # NOTE(Bob): hack
+                dtype = jnp.float32
 
                 # Use an empty tensor instead of `None`` to force Dynamo to pass
                 # it by reference, rather by specializing on the value ``None``.
@@ -165,54 +171,59 @@ class TPUWorker:
                 raise NotImplementedError(
                     f"Unsupported KV cache spec '{type(layer_spec)}'")
 
-        runner_kv_caches: list[torch.Tensor] = []
+        runner_kv_caches: list[jax.Array] = []
         bind_kv_cache(
             kv_caches,
             self.vllm_config.compilation_config.static_forward_context,
             runner_kv_caches)
 
         # `max_num_tokens >= max_num_batched_tokens` due to padding.
-        with self.model_runner.maybe_setup_dummy_loras(self.lora_config):
-            self.model_runner.profile_run(self.model_runner.max_num_tokens)
+        # with self.model_runner.maybe_setup_dummy_loras(self.lora_config):
+        #     self.model_runner.profile_run(self.model_runner.max_num_tokens)
 
-        # Synchronize before measuring the memory usage.
-        xm.wait_device_ops()
+        # # Synchronize before measuring the memory usage.
+        # xm.wait_device_ops()
 
-        # During the profiling run, the model runs without KV cache. After
-        # the profiling run, the model always runs with KV cache. Here we clear
-        # the dynamo cache and cached bytecode to ensure the model always has
-        # one compiled bytecode. Having one FX graph/cached bytecode per
-        # compiled model is required for `support_torch_compile` decorator to
-        # skip dynamo guard.
-        self.model_runner.reset_dynamo_cache()
+        # # During the profiling run, the model runs without KV cache. After
+        # # the profiling run, the model always runs with KV cache. Here we clear
+        # # the dynamo cache and cached bytecode to ensure the model always has
+        # # one compiled bytecode. Having one FX graph/cached bytecode per
+        # # compiled model is required for `support_torch_compile` decorator to
+        # # skip dynamo guard.
+        # # NOTE(Bob): I don't think we need this for jax, but seems to be not 
+        # # hurtful to not remove it for now
+        # self.model_runner.reset_dynamo_cache()
 
-        # Get the maximum amount of memory used by the model weights and
-        # intermediate activations.
-        if self.use_spmd:
-            # This is a workaround for the TPU SPMD mode. The get_memory_info
-            # API doesn't work with SPMD mode in PyTorch/XLA.
-            # TODO: use xm.get_memory_info for SPMD once it's supported in
-            # PyTorch/XLA.
-            import tpu_info
-            chip_type, _ = tpu_info.device.get_local_chips()
-            device_usage = tpu_info.metrics.get_chip_usage(chip_type)
-            total_memory_size = device_usage[0].total_memory
-            current_mem = device_usage[0].memory_usage
-        else:
-            m = xm.get_memory_info(self.device)
-            total_memory_size = m["bytes_limit"]
-            current_mem = m["bytes_used"]
-        # Ideally we would use profiled = m["peak_bytes_used"] to
-        # get weights + activations. But there is memory used during
-        # compilation / weight loading that impacts the peak and
-        # there is no way to reset peak memory in XLA, So we
-        # use the heuristic of 2% of weights.
-        profiled = current_mem * 1.02
+        # # Get the maximum amount of memory used by the model weights and
+        # # intermediate activations.
+        # if self.use_spmd:
+        #     # This is a workaround for the TPU SPMD mode. The get_memory_info
+        #     # API doesn't work with SPMD mode in PyTorch/XLA.
+        #     # TODO: use xm.get_memory_info for SPMD once it's supported in
+        #     # PyTorch/XLA.
+        #     assert False, "not used for now"
+        #     import tpu_info
+        #     chip_type, _ = tpu_info.device.get_local_chips()
+        #     device_usage = tpu_info.metrics.get_chip_usage(chip_type)
+        #     total_memory_size = device_usage[0].total_memory
+        #     current_mem = device_usage[0].memory_usage
+        # else:
+        #     m = xm.get_memory_info(self.device)
+        #     total_memory_size = m["bytes_limit"]
+        #     current_mem = m["bytes_used"]
+        # # Ideally we would use profiled = m["peak_bytes_used"] to
+        # # get weights + activations. But there is memory used during
+        # # compilation / weight loading that impacts the peak and
+        # # there is no way to reset peak memory in XLA, So we
+        # # use the heuristic of 2% of weights.
+        # profiled = current_mem * 1.02
 
-        # Calculate the TPU KV cache size based on profiling.
-        usable_memory_size = int(total_memory_size *
-                                 self.cache_config.gpu_memory_utilization)
-        tpu_kv_cache_bytes = max(usable_memory_size - profiled, 0)
+        # # Calculate the TPU KV cache size based on profiling.
+        # usable_memory_size = int(total_memory_size *
+        #                          self.cache_config.gpu_memory_utilization)
+        # tpu_kv_cache_bytes = max(usable_memory_size - profiled, 0)
+        # NOTE(Bob): hardcoded!!!!!!!
+        tpu_kv_cache_bytes = 27505662873
 
         return int(tpu_kv_cache_bytes)
 
