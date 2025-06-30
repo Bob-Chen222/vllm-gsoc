@@ -100,6 +100,8 @@ def initialize_model(
 
 def process_weights_after_loading(model: nnx.Module, model_config: ModelConfig,
                                   target_device: torch.device) -> None:
+    # NOTE(Bob): no need to do it
+    return
     for _, module in model.named_modules():
         if isinstance(module, QKVCrossParallelLinear):
             # NOTE(Isotr0py): special case for cross QKV layer because
