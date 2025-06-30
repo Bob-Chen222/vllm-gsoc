@@ -735,7 +735,7 @@ class MergedColumnParallelLinear(ColumnParallelLinear):
         assert param_data.shape == loaded_weight.shape
         print("param weight shape", param['weight'].value.shape)
         print("param: ", str(param))
-        param['weight'].value = jax.lax.dynamic_update_slice(param['weight'].value, loaded_weight, (shard_size))
+        param['weight'].value = jax.lax.dynamic_update_slice(param['weight'].value, loaded_weight, (shard_offset, 0))
 
     def _load_fused_module_from_checkpoint(self, param: BasevLLMParameter,
                                            loaded_weight: torch.Tensor):
