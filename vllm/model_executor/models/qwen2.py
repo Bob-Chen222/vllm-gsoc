@@ -433,11 +433,10 @@ class Qwen2Model(nnx.Module):
             ("gate_up_proj", "gate_proj", 0),
             ("gate_up_proj", "up_proj", 1),
         ]
-        params_dict = nnx.state(self, nnx.Param)
-        print("params_dict:", params_dict.keys())
+        params_dict = nnx.state(self)
+        # print("params_dict:", params_dict.keys())
         loaded_params: set[str] = set()
         for name, loaded_weight in weights:
-            name_list = name.split(".")[1:-1]
             if "rotary_emb.inv_freq" in name:
                 continue
             if (self.quant_config is not None and
@@ -454,18 +453,25 @@ class Qwen2Model(nnx.Module):
             for (param_name, weight_name, shard_id) in stacked_params_mapping:
                 if weight_name not in name:
                     continue
+
                 name = name.replace(weight_name, param_name)
+                name_list = name.split(".")[1:-1]
                 # Skip loading extra bias for GPTQ models.
                 if name.endswith(".bias") and name not in params_dict:
                     continue
                 # if is_pp_missing_parameter(name, self):
                 #     continue
+
+                print("name_list:", name_list)
                 param : nnx.State = params_dict[name_list[0]]
                 layer_num = -1
                 if len(name_list) > 1:
                     for n in name_list[1:]:
-                        key = int(n) if n.isdigit() else n
-                        layer_num = key
+                        if n.isdigit():
+                            key = int(n)
+                            layer_num = key
+                        else:
+                            key = n
                         param = param[key]
 
                 # NOTE(Bob): let's just get a hack for the weightloader
@@ -478,6 +484,7 @@ class Qwen2Model(nnx.Module):
                 break
             else:
                 # Skip loading extra bias for GPTQ models.
+                name_list = name.split(".")[1:-1]
                 if name.endswith(".bias") and name not in params_dict:
                     continue
                 # Remapping the name of FP8 kv-scale.

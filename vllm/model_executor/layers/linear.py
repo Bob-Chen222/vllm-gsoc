@@ -432,7 +432,7 @@ class ColumnParallelLinear(LinearBase):
             self.bias_output_dim = 0
             self.bias_weight_loader = self.weight_loader
 
-    def weight_loader(self, param: nnx.Param, loaded_weight: jax.Array):
+    def weight_loader(self, param: nnx.State, loaded_weight: jax.Array):
         # NOTE (Bob): This is a hack for now
         tp_rank = 0
         output_dim = getattr(param, "output_dim", 0)
@@ -460,7 +460,7 @@ class ColumnParallelLinear(LinearBase):
                 final_shape[output_dim] = final_shape[output_dim] // tp_size
             param.materialize(final_shape, dtype=loaded_weight.dtype)
 
-        param_data = param.value
+        param_data = param['weight'].value
         if output_dim is not None and not is_sharded_weight:
             shard_size = param_data.shape[output_dim]
             start_idx = tp_rank * shard_size
@@ -475,7 +475,7 @@ class ColumnParallelLinear(LinearBase):
             loaded_weight = loaded_weight.reshape(1)
 
         assert param_data.shape == loaded_weight.shape
-        param.value = loaded_weight
+        param['weight'].value = loaded_weight
     def weight_loader_v2(self, param: Parameter, loaded_weight: torch.Tensor):
         # Special case for loading scales off disk, which often do not
         # have a shape (such as in the case of AutoFP8).
@@ -579,7 +579,7 @@ class MergedColumnParallelLinear(ColumnParallelLinear):
                          return_bias=return_bias)
 
     def weight_loader(self,
-                      param: nnx.Param,
+                      param: nnx.State,
                       loaded_weight: jax.Array,
                       loaded_shard_id: Optional[int] = None):
 
@@ -616,7 +616,7 @@ class MergedColumnParallelLinear(ColumnParallelLinear):
                 param.data_container.append(loaded_weight)
                 return
 
-        param_data = param.data
+        param_data = param['weight'].value
         # NOTE (Bob): This is a hack for now
         output_dim = getattr(param, "output_dim", 0)
         # Special case for AQLM codebooks.
@@ -733,7 +733,7 @@ class MergedColumnParallelLinear(ColumnParallelLinear):
                     "the same for all partitions.")
 
         assert param_data.shape == loaded_weight.shape
-        param.value = jax.lax.dynamic_update_slice(param.value, loaded_weight, (shard_offset,))
+        param['weight'].value = jax.lax.dynamic_update_slice(param['weight'].value, loaded_weight, (shard_offset,))
 
     def _load_fused_module_from_checkpoint(self, param: BasevLLMParameter,
                                            loaded_weight: torch.Tensor):
@@ -1138,7 +1138,7 @@ class QKVParallelLinear(ColumnParallelLinear):
             # NOTE (Bob): This is a hack for now
             # param_data = param_data.narrow(output_dim, shard_offset,
             #                                shard_size)
-            param_data = param.value
+            param_data = param['weight'].value
             
             if loaded_shard_id == "q":
                 shard_id = tp_rank
@@ -1174,7 +1174,7 @@ class QKVParallelLinear(ColumnParallelLinear):
                     "for all partitions.")
 
         assert param_data.shape == loaded_weight.shape
-        param.value = jax.lax.dynamic_update_slice(param.value, loaded_weight, (shard_offset,))
+        param['weight'].value = jax.lax.dynamic_update_slice(param['weight'].value, loaded_weight, (shard_offset,))
 
 
 class RowParallelLinear(LinearBase):
@@ -1303,7 +1303,7 @@ class RowParallelLinear(LinearBase):
             loaded_weight = loaded_weight.reshape(1)
 
         assert param_data.shape == loaded_weight.shape
-        param.value = loaded_weight
+        param['weight'].value = loaded_weight
 
     def weight_loader_v2(self, param: BasevLLMParameter,
                          loaded_weight: torch.Tensor):
