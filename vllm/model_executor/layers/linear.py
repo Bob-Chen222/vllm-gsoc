@@ -735,6 +735,7 @@ class MergedColumnParallelLinear(ColumnParallelLinear):
         assert param_data.shape == loaded_weight.shape
         print("param weight shape", param['weight'].value.shape)
         print("param: ", str(param))
+        loaded_weight = loaded_weight.astype(jnp.float32)
         param['weight'].value = jax.lax.dynamic_update_slice(param['weight'].value, loaded_weight, (shard_offset, 0))
 
     def _load_fused_module_from_checkpoint(self, param: BasevLLMParameter,
@@ -981,7 +982,7 @@ class QKVParallelLinear(ColumnParallelLinear):
                               shard_size=shard_size)
 
     def weight_loader(self,
-                      param: nnx.Param,
+                      param: nnx.State,
                       loaded_weight: jax.Array,
                       loaded_shard_id: Optional[str] = None):
 
@@ -1019,7 +1020,7 @@ class QKVParallelLinear(ColumnParallelLinear):
                 param.data_container.append(loaded_weight)
                 return
 
-        param_data = param.data
+        param_data = param['weight'].value
         output_dim = getattr(param, "output_dim", 0)
         # Special case for AQLM codebooks.
         is_metadata = getattr(param, "is_metadata", False)
@@ -1174,8 +1175,9 @@ class QKVParallelLinear(ColumnParallelLinear):
                     "QKVParallelLinear, assume the weight is the same "
                     "for all partitions.")
 
-        assert param_data.shape == loaded_weight.shape
-        param['weight'].value = jax.lax.dynamic_update_slice(param['weight'].value, loaded_weight, (shard_index * shard_size))
+        # assert param_data.shape == loaded_weight.shape
+        loaded_weight = loaded_weight.astype(jnp.float32)
+        param['weight'].value = jax.lax.dynamic_update_slice(param['weight'].value, loaded_weight, (shard_offset,0))
 
 
 class RowParallelLinear(LinearBase):

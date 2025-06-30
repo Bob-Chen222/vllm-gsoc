@@ -98,7 +98,7 @@ def initialize_model(
         return model_class(**kwargs)
 
 
-def process_weights_after_loading(model: nn.Module, model_config: ModelConfig,
+def process_weights_after_loading(model: nnx.Module, model_config: ModelConfig,
                                   target_device: torch.device) -> None:
     for _, module in model.named_modules():
         if isinstance(module, QKVCrossParallelLinear):
