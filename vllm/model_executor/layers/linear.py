@@ -733,7 +733,9 @@ class MergedColumnParallelLinear(ColumnParallelLinear):
                     "the same for all partitions.")
 
         assert param_data.shape == loaded_weight.shape
-        param['weight'].value = jax.lax.dynamic_update_slice(param['weight'].value, loaded_weight, (shard_offset,))
+        print("param weight shape", param['weight'].value.shape)
+        print("param: ", str(param))
+        param['weight'].value = jax.lax.dynamic_update_slice(param['weight'].value, loaded_weight, (shard_size))
 
     def _load_fused_module_from_checkpoint(self, param: BasevLLMParameter,
                                            loaded_weight: torch.Tensor):
@@ -1147,7 +1149,6 @@ class QKVParallelLinear(ColumnParallelLinear):
             start_idx = shard_id * shard_size
 
             if not is_sharded_weight:
-                shard_size = param_data.shape[output_dim]
                 start_idx = tp_rank * shard_size
                 slices = [slice(None)] * loaded_weight.ndim
                 slices[output_dim] = slice(start_idx, start_idx + shard_size)
@@ -1174,7 +1175,7 @@ class QKVParallelLinear(ColumnParallelLinear):
                     "for all partitions.")
 
         assert param_data.shape == loaded_weight.shape
-        param['weight'].value = jax.lax.dynamic_update_slice(param['weight'].value, loaded_weight, (shard_offset,))
+        param['weight'].value = jax.lax.dynamic_update_slice(param['weight'].value, loaded_weight, (shard_index * shard_size))
 
 
 class RowParallelLinear(LinearBase):
