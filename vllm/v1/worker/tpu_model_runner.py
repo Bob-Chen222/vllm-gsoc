@@ -998,6 +998,7 @@ class TPUModelRunner(LoRAModelRunnerMixin):
                     model = model_loader.load_model(
                         vllm_config=self.vllm_config,
                         model_config=self.model_config)
+                    assert model is not None
                 else:
                     logger.info("Model was already initialized. \
                             Loading weights inplace...")
@@ -1011,9 +1012,11 @@ class TPUModelRunner(LoRAModelRunnerMixin):
 
         # Sync all pending XLA execution during model initialization and weight
         # loading.
+        assert model is not None, "Model is None after loading"
         xm.mark_step()
         xm.wait_device_ops()
         if not hasattr(self, "model"):
+            print("assigned model!!")
             self.model = model
         self.sampler = TPUSampler()
 
