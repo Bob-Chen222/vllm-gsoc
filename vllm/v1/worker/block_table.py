@@ -3,6 +3,8 @@
 
 import numpy as np
 import torch
+import jax
+import jax.numpy as jnp
 
 from vllm.logger import init_logger
 from vllm.utils import cdiv
@@ -26,28 +28,26 @@ class BlockTable:
         self.pin_memory = pin_memory
         self.device = device
 
-        self.block_table = torch.zeros(
+        self.block_table = jnp.zeros(
             (max_num_reqs, max_num_blocks_per_req),
-            device=self.device,
-            dtype=torch.int32,
+            dtype=jnp.int32,
         )
-        self.block_table_cpu = torch.zeros(
-            (max_num_reqs, max_num_blocks_per_req),
-            device="cpu",
-            dtype=torch.int32,
-            pin_memory=pin_memory,
-        )
+        self.block_table_cpu = jax.device_put(
+            jnp.zeros((max_num_reqs, max_num_blocks_per_req), dtype=jnp.int32),
+            device=jax.devices("cpu")[0])
+        
         self.block_table_np = self.block_table_cpu.numpy()
         self.num_blocks_per_row = np.zeros(max_num_reqs, dtype=np.int32)
 
-        self.slot_mapping_cpu = torch.zeros(self.max_num_batched_tokens,
-                                            dtype=torch.int64,
-                                            device="cpu",
-                                            pin_memory=self.pin_memory)
+        self.slot_mapping_cpu = jax.device_put(
+            jnp.zeros(self.max_num_batched_tokens, dtype=jnp.int64),
+            device=jax.devices("cpu")[0])
         self.slot_mapping_np = self.slot_mapping_cpu.numpy()
-        self.slot_mapping = torch.zeros(self.max_num_batched_tokens,
-                                        dtype=torch.int64,
-                                        device=self.device)
+        self.slot_mapping = jnp.zeros(
+            self.max_num_batched_tokens,
+            dtype=jnp.int64,
+            device=self.device,
+        )
 
     def append_row(
         self,
@@ -87,16 +87,17 @@ class BlockTable:
         self.block_table.fill_(0)
         self.block_table_cpu.fill_(0)
 
-    def get_device_tensor(self) -> torch.Tensor:
+    def get_device_tensor(self) -> jax.Array:
         """Ruturns the device tensor of the block table."""
         return self.block_table
 
-    def get_cpu_tensor(self) -> torch.Tensor:
+    def get_cpu_tensor(self) -> jax.Array:
         """Returns the CPU tensor of the block table."""
         return self.block_table_cpu
 
     def get_numpy_array(self) -> np.ndarray:
         """Returns the numpy array of the block table."""
+        # NOTE(Bob): now block_table_np and block_table_cpu are not the same
         return self.block_table_np
 
 

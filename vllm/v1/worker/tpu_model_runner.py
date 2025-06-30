@@ -9,6 +9,8 @@ from unittest.mock import patch
 import numpy as np
 import torch
 import torch.nn as nn
+import jax
+import jax.numpy as jnp
 # TPU XLA related
 import torch_xla.core.xla_model as xm
 import torch_xla.distributed.spmd as xs
@@ -1385,7 +1387,7 @@ class TPUModelRunner(LoRAModelRunnerMixin):
                 "TPU.")
             kv_cache_sizes[kv_cache_tensor.shared_by[0]] = kv_cache_tensor.size
 
-        kv_caches: dict[str, torch.Tensor] = {}
+        kv_caches: dict[str, jax.Array] = {}
         for kv_cache_group in kv_cache_config.kv_cache_groups:
             kv_cache_spec = kv_cache_group.kv_cache_spec
             for layer_name in kv_cache_group.layer_names:
@@ -1407,8 +1409,12 @@ class TPUModelRunner(LoRAModelRunnerMixin):
                         kv_cache_spec.num_kv_heads, kv_cache_spec.head_size)
                     dtype = kv_cache_spec.dtype
 
-                    tpu_kv_cache = torch.zeros(kv_cache_shape,
-                                               dtype=dtype).to(self.device)
+                    # tpu_kv_cache = torch.zeros(kv_cache_shape,
+                    #                            dtype=dtype).to(self.device)
+                    tpu_kv_cache = jnp.zeros(
+                        kv_cache_shape,
+                        dtype=dtype
+                    )
 
                     kv_caches[layer_name] = tpu_kv_cache
                 else:
@@ -1417,6 +1423,7 @@ class TPUModelRunner(LoRAModelRunnerMixin):
         # Setup `kv_cache_config` and `kv_caches` for models
         # with cross-layer KV sharing
         if self.shared_kv_cache_layers:
+            assert False, "not used for now"
             initialize_kv_cache_for_kv_sharing(
                 self.shared_kv_cache_layers,
                 kv_cache_config.kv_cache_groups,
