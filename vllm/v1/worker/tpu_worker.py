@@ -161,11 +161,10 @@ class TPUWorker:
         for layer_name, layer_spec in kv_cache_spec.items():
             if isinstance(layer_spec, AttentionSpec):
                 # NOTE(Bob): hack
-                dtype = jnp.float32
 
                 # Use an empty tensor instead of `None`` to force Dynamo to pass
                 # it by reference, rather by specializing on the value ``None``.
-                tpu_kv_cache = torch.tensor([], dtype=dtype).to(self.device)
+                tpu_kv_cache = jnp.empty((0,))
                 kv_caches[layer_name] = tpu_kv_cache
             else:
                 raise NotImplementedError(

@@ -85,15 +85,14 @@ class InputBatch:
             jnp.zeros((max_num_reqs, max_model_len), dtype=jnp.int32),
             device=jax.devices("cpu")[0])
         
-        self.token_ids_cpu = self.token_ids_cpu_tensor.numpy()
+        self.token_ids_cpu = np.array(self.token_ids_cpu_tensor)
         self.num_tokens = np.zeros(max_num_reqs, dtype=np.int32)
         self.num_tokens_no_spec = np.zeros(max_num_reqs, dtype=np.int32)
         self.num_prompt_tokens = np.zeros(max_num_reqs, dtype=np.int32)
         self.num_computed_tokens_cpu_tensor = jax.device_put(
             jnp.zeros((max_num_reqs, ), dtype=jnp.int32),
             device=jax.devices("cpu")[0])
-        self.num_computed_tokens_cpu = \
-            self.num_computed_tokens_cpu_tensor.numpy()
+        self.num_computed_tokens_cpu = np.array(self.num_computed_tokens_cpu_tensor)
 
         # Block table.
         self.block_table = MultiGroupBlockTable(
@@ -106,74 +105,57 @@ class InputBatch:
         )
 
         # Sampling-related.
-        self.temperature = jax.device_put(
-            jnp.zeros((max_num_reqs, ), dtype=jnp.float32),
-            device=device)
+        self.temperature = jnp.zeros((max_num_reqs, ), dtype=jnp.float32)
         self.temperature_cpu_tensor = jax.device_put(
             jnp.zeros((max_num_reqs, ), dtype=jnp.float32),
             device=jax.devices("cpu")[0])
-        self.temperature_cpu = self.temperature_cpu_tensor.numpy()
+        self.temperature_cpu = np.array(self.temperature_cpu_tensor)
         self.greedy_reqs: set[str] = set()
         self.random_reqs: set[str] = set()
 
-        self.top_p = jax.device_put(
-            jnp.zeros((max_num_reqs, ), dtype=jnp.float32),
-            device=device)
+        self.top_p = jnp.zeros((max_num_reqs, ), dtype=jnp.float32)
         self.top_p_cpu_tensor = jax.device_put(
             jnp.zeros((max_num_reqs, ), dtype=jnp.float32),
             device=jax.devices("cpu")[0])
-        self.top_p_cpu = self.top_p_cpu_tensor.numpy()
+        self.top_p_cpu = np.array(self.top_p_cpu_tensor)
         self.top_p_reqs: set[str] = set()
 
-        self.top_k = jax.device_put(
-            jnp.zeros((max_num_reqs, ), dtype=jnp.int32),
-            device=device)
+        self.top_k = jnp.zeros((max_num_reqs, ), dtype=jnp.int32)
         self.top_k_cpu_tensor = jax.device_put(
             jnp.zeros((max_num_reqs, ), dtype=jnp.int32),
             device=jax.devices("cpu")[0])
-        self.top_k_cpu = self.top_k_cpu_tensor.numpy()
+        self.top_k_cpu = np.array(self.top_k_cpu_tensor)
         self.top_k_reqs: set[str] = set()
 
-        self.min_p = jax.device_put(
-            jnp.zeros((max_num_reqs, ), dtype=jnp.float32),
-            device=device)
+        self.min_p = jnp.zeros((max_num_reqs, ), dtype=jnp.float32)
         self.min_p_cpu_tensor = jax.device_put(
             jnp.zeros((max_num_reqs, ), dtype=jnp.float32),
             device=jax.devices("cpu")[0])
-        self.min_p_cpu = self.min_p_cpu_tensor.numpy()
+        self.min_p_cpu = np.array(self.min_p_cpu_tensor)
         self.min_p_reqs: set[str] = set()
 
         # Frequency penalty related data structures
-        self.frequency_penalties = jax.device_put(
-            jnp.zeros((max_num_reqs, ), dtype=jnp.float32),
-            device=device)
+        self.frequency_penalties = jnp.zeros((max_num_reqs, ), dtype=jnp.float32)
         self.frequency_penalties_cpu_tensor = jax.device_put(
             jnp.zeros((max_num_reqs, ), dtype=jnp.float32),
             device=jax.devices("cpu")[0])
-        self.frequency_penalties_cpu = \
-            self.frequency_penalties_cpu_tensor.numpy()
+        self.frequency_penalties_cpu = np.array(self.frequency_penalties_cpu_tensor)
         self.frequency_penalties_reqs: set[str] = set()
 
         # Presence penalty related data structures
-        self.presence_penalties = jax.device_put(
-            jnp.zeros((max_num_reqs, ), dtype=jnp.float32),
-            device=device)
+        self.presence_penalties = jnp.zeros((max_num_reqs, ), dtype=jnp.float32)
         self.presence_penalties_cpu_tensor = jax.device_put(
             jnp.zeros((max_num_reqs, ), dtype=jnp.float32),
             device=jax.devices("cpu")[0])
-        self.presence_penalties_cpu = self.presence_penalties_cpu_tensor.numpy(
-        )
+        self.presence_penalties_cpu = np.array(self.presence_penalties_cpu_tensor)
         self.presence_penalties_reqs: set[str] = set()
 
         # Repetition penalty related data structures
-        self.repetition_penalties = jax.device_put(
-            jnp.zeros((max_num_reqs, ), dtype=jnp.float32),
-            device=device)
+        self.repetition_penalties = jnp.zeros((max_num_reqs, ), dtype=jnp.float32)
         self.repetition_penalties_cpu_tensor = jax.device_put(
             jnp.zeros((max_num_reqs, ), dtype=jnp.float32),
             device=jax.devices("cpu")[0])
-        self.repetition_penalties_cpu = \
-            self.repetition_penalties_cpu_tensor.numpy()
+        self.repetition_penalties_cpu = np.array(self.repetition_penalties_cpu_tensor)
         self.repetition_penalties_reqs: set[str] = set()
 
         # req_index -> (min_tokens, stop_token_ids)
@@ -596,7 +578,7 @@ class InputBatch:
             dtype=torch.int64,
             pin_memory=self.pin_memory,
         )
-        prompt_token_ids = prompt_token_ids_cpu_tensor.numpy()
+        prompt_token_ids = np.array(prompt_token_ids_cpu_tensor)
         prompt_token_ids[:] = self.token_ids_cpu[:self.
                                                  num_reqs, :max_prompt_len]
         # Use the value of vocab_size as a pad since we don't have a
