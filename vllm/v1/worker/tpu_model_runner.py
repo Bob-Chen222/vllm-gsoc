@@ -557,10 +557,12 @@ class TPUModelRunner(LoRAModelRunnerMixin):
         # NOTE(woosuk): We use torch.index_select instead of np.take here
         # because torch.index_select is much faster than np.take for large
         # tensors.
-        torch.index_select(self.input_batch.token_ids_cpu_tensor.flatten(),
-                           0,
-                           torch.from_numpy(token_indices),
-                           out=self.input_ids_cpu[:total_num_scheduled_tokens])
+        self.input_ids_cpu = self.input_ids_cpu.at[:total_num_scheduled_tokens].set(
+                jnp.take(
+                    self.input_batch.token_ids_cpu_tensor.flatten(),
+                    token_indices
+                )
+        )
 
         # Calculate the slot mapping.
         # E.g., [0, 1, 0, 1, 2, 3, 4, 0, 1, 2]
@@ -575,7 +577,7 @@ class TPUModelRunner(LoRAModelRunnerMixin):
         # because torch.index_select is much faster than np.take for large
         # tensors.
         block_table_cpu = self.input_batch.block_table[0].get_cpu_tensor()
-        block_numbers = block_table_cpu.flatten()[block_table_indices].numpy()
+        block_numbers = np.array(block_table_cpu.flatten()[block_table_indices])
         block_offsets = positions_np % self.block_size
         np.add(block_numbers * self.block_size,
                block_offsets,
