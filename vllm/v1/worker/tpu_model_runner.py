@@ -220,8 +220,9 @@ class TPUModelRunner(LoRAModelRunnerMixin):
                                             jax.devices("cpu")[0])
         self.positions_np = np.array(self.positions_cpu)
 
-        self.block_table_cpu = jax.device_put(
-            self.block_table_cpu, jax.devices("cpu")[0])
+        self.block_table_cpu = jax.device_put(jnp.zeros((self.max_num_reqs, self.max_num_blocks_per_req), 
+                                              dtype= jnp.int32)
+                                              , jax.devices("cpu")[0])
 
         self.query_start_loc_cpu = jax.device_put(
             jnp.zeros(self.max_num_tokens + 1, dtype=jnp.int32),
