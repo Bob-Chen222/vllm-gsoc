@@ -214,31 +214,24 @@ class TPUModelRunner(LoRAModelRunnerMixin):
         # Cached torch/numpy tensor
         # The pytorch tensor and numpy array share the same buffer.
         # Sometimes the numpy op is faster so we create both.
-        self.input_ids_cpu = torch.zeros(self.max_num_tokens,
-                                         dtype=torch.int32,
-                                         device="cpu")
+        self.input_ids_cpu = jax.device_put(jnp.zeros(self.max_num_tokens, dtype=jnp.int32), 
+                                            jax.devices("cpu")[0])
+        self.positions_cpu = jax.device_put(jnp.zeros(self.max_num_tokens, dtype=jnp.int32),
+                                            jax.devices("cpu")[0])
+        self.positions_np = np.array(self.positions_cpu)
 
-        self.positions_cpu = torch.zeros(self.max_num_tokens,
-                                         dtype=torch.int32,
-                                         device="cpu")
-        self.positions_np = self.positions_cpu.numpy()
+        self.block_table_cpu = jax.device_put(
+            self.block_table_cpu, jax.devices("cpu")[0])
 
-        self.block_table_cpu = torch.zeros(
-            (self.max_num_reqs, self.max_num_blocks_per_req),
-            dtype=torch.int32,
-            device="cpu")
+        self.query_start_loc_cpu = jax.device_put(
+            jnp.zeros(self.max_num_tokens + 1, dtype=jnp.int32),
+            jax.devices("cpu")[0]
+        )
+        self.query_start_loc_np = np.array(self.query_start_loc_cpu)
 
-        self.query_start_loc_cpu = torch.zeros(self.max_num_tokens + 1,
-                                               dtype=torch.int32,
-                                               device="cpu",
-                                               pin_memory=self.pin_memory)
-        self.query_start_loc_np = self.query_start_loc_cpu.numpy()
-
-        self.seq_lens_cpu = torch.zeros(self.max_num_tokens,
-                                        dtype=torch.int32,
-                                        device="cpu",
-                                        pin_memory=self.pin_memory)
-        self.seq_lens_np = self.seq_lens_cpu.numpy()
+        self.seq_lens_cpu = jax.device_put(jnp.zeros(self.max_num_reqs, dtype=jnp.int32),
+                                            jax.devices("cpu")[0])
+        self.seq_lens_np = np.array(self.seq_lens_cpu)
 
         # Range tensor with values [0 .. self.max_num_tokens - 1].
         # Used to initialize positions / context_lens / seq_lens
@@ -1377,6 +1370,9 @@ class TPUModelRunner(LoRAModelRunnerMixin):
                 ],
             )
         # Verify dtype compatibility between block_table_cpu and input_batch
+        print("self.block_table_cpu.dtype is", self.block_table_cpu.dtype)
+        print("self.input_batch.block_table[0].get_cpu_tensor().dtype is", self.input_batch.block_table[0
+            ].get_cpu_tensor().dtype)
         assert self.block_table_cpu.dtype == self.input_batch.block_table[
             0].get_cpu_tensor().dtype
 
