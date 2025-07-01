@@ -1408,9 +1408,11 @@ class TPUModelRunner(LoRAModelRunnerMixin):
 
                     # tpu_kv_cache = torch.zeros(kv_cache_shape,
                     #                            dtype=dtype).to(self.device)
+                    if dtype != torch.bfloat16:
+                        assert False, "only hardcoded one datatype for jax"
                     tpu_kv_cache = jnp.zeros(
                         kv_cache_shape,
-                        dtype=dtype
+                        dtype=jnp.bfloat16
                     )
 
                     kv_caches[layer_name] = tpu_kv_cache
