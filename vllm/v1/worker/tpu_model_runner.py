@@ -598,29 +598,29 @@ class TPUModelRunner(LoRAModelRunnerMixin):
         padded_total_num_scheduled_tokens = _get_padded_token_len(
             self.num_tokens_paddings, total_num_scheduled_tokens)
         # Zero out to avoid spurious values from prev iteration (last cp chunk)
-        self.input_ids_cpu[
-            total_num_scheduled_tokens:padded_total_num_scheduled_tokens] = 0
-        self.input_ids = self.input_ids_cpu[:
-                                            padded_total_num_scheduled_tokens].to(
-                                                self.device)
-        self.position_ids = self.positions_cpu[:
-                                               padded_total_num_scheduled_tokens].to(
-                                                   self.device)
-        self.input_batch.block_table[0].slot_mapping_cpu[
-            total_num_scheduled_tokens:] = _PAD_SLOT_ID
-        slot_mapping = (
-            self.input_batch.block_table[0].
-            slot_mapping_cpu[:padded_total_num_scheduled_tokens].to(
-                self.device))
+        self.input_ids_cpu = self.input_ids_cpu.at[total_num_scheduled_tokens:padded_total_num_scheduled_tokens].set(0)
+        self.input_ids = jax.device_put(
+            self.input_ids_cpu[:padded_total_num_scheduled_tokens], 
+            jax.devices()[0]
+        )
+        self.position_ids = jax.device_put(self.position_ids_cpu[:padded_total_num_scheduled_tokens], jax.devices()[0])
+
+        self.input_batch.block_table[0].slot_mapping_cpu = self.input_batch.block_table[0].\
+        slot_mapping_cpu [:padded_total_num_scheduled_tokens].at[total_num_scheduled_tokens:].set(_PAD_SLOT_ID)
+
+        slot_mapping = jax.device_put(self.input_batch.block_table[0].slot_mapping_cpu[:padded_total_num_scheduled_tokens], 
+                                      jax.devices()[0])
+
         block_tables = self.block_table_cpu[:self.max_num_reqs]
         block_tables[:num_reqs, :self.max_num_blocks_per_req] = (
             self.input_batch.block_table[0].get_cpu_tensor()[:num_reqs])
-        block_tables = block_tables.to(self.device)
-        query_start_loc = self.query_start_loc_cpu[:self.max_num_reqs + 1].to(
-            self.device)
-        seq_lens = self.seq_lens_cpu[:self.max_num_reqs].to(self.device)
+        block_tables = jax.device_put(block_tables, jax.devices()[0])
+        query_start_loc = jax.device_put(self.query_start_loc_cpu[:self.max_num_reqs + 1], 
+                                         jax.devices()[0])
+        seq_lens = jax.device_put(self.seq_lens_cpu[:self.max_num_reqs], jax.devices()[0])
 
         if self.lora_config is not None:
+            assert False, "not supported in jax"
             # We need to respect padding when activating LoRA adapters
             padded_num_scheduled_tokens_per_req = np.copy(
                 num_scheduled_tokens_per_req
@@ -636,9 +636,10 @@ class TPUModelRunner(LoRAModelRunnerMixin):
             block_tables=block_tables,
             context_lens=seq_lens,
             query_start_loc=query_start_loc,
-            num_seqs=torch.tensor([num_reqs],
-                                  dtype=torch.int32,
-                                  device=self.device),
+            num_seqs= jax.device_put(
+                jnp.array([num_reqs], dtype=jnp.int32),
+                jax.devices()[0]
+            )
         )
         # NOTE(woosuk): Due to chunked prefills, there can be at most 1 partial
         # request in the batch. While we should not sample any token from this
@@ -653,6 +654,7 @@ class TPUModelRunner(LoRAModelRunnerMixin):
         logits_indices = logits_indices.to(self.device)
 
         if self.lora_config is not None:
+            assert False, "not supported in jax"
             # We need to respect padding when activating LoRA adapters
             padded_num_scheduled_tokens_per_req = np.copy(
                 num_scheduled_tokens_per_req
