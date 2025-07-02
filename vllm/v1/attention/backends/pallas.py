@@ -275,7 +275,7 @@ class PallasAttentionBackendImpl(AttentionImpl, nnx.Module):
 
         return output.reshape(num_tokens, hidden_size)
 
-
+@jax.jit(donate_argnums=(2,))
 def write_to_kv_cache(
     key: jax.Array,
     value: jax.Array,
@@ -299,7 +299,7 @@ def write_to_kv_cache(
     kv = jnp.concatenate([key, value], axis=-1).reshape(-1, num_combined_kv_heads,
                                                   head_size)
 
-    torch.ops.xla.dynamo_set_buffer_donor_(kv_cache, True)
+    # torch.ops.xla.dynamo_set_buffer_donor_(kv_cache, True)
 
     # NOTE(Bob): need to check if this is correct
     kv_cache = kv_cache.reshape((-1,) + kv_cache.shape[2:])

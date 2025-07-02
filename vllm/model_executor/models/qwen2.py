@@ -285,6 +285,32 @@ class Qwen2DecoderLayer(nnx.Module):
             hidden_states, residual)
         hidden_states = self.mlp(hidden_states)
         return hidden_states, residual
+    
+    def __call__(
+        self,
+        positions: jax.Array,
+        hidden_states: jax.Array,
+        residual: Optional[jax.Array],
+    ) -> tuple[jax.Array, jax.Array]:
+        # Self Attention
+        if residual is None:
+            residual = hidden_states
+            hidden_states = self.input_layernorm(hidden_states)
+        else:
+            hidden_states, residual = self.input_layernorm(
+                hidden_states, residual)
+        hidden_states = self.self_attn(
+            positions=positions,
+            hidden_states=hidden_states,
+        )
+
+        # Fully Connected
+        hidden_states, residual = self.post_attention_layernorm(
+            hidden_states, residual)
+        hidden_states = self.mlp(hidden_states)
+        return hidden_states, residual
+    
+    
 
 
 # @support_torch_compile(
