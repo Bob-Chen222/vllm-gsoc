@@ -96,6 +96,12 @@ class Qwen2MLP(nnx.Module):
         x = self.act_fn(gate_up)
         x, _ = self.down_proj(x)
         return x
+    
+    def __call__(self, x):
+        gate_up, _ = self.gate_up_proj(x)
+        x = self.act_fn(gate_up)
+        x, _ = self.down_proj(x)
+        return x
 
 
 class Qwen2Attention(nnx.Module):
@@ -195,7 +201,9 @@ class Qwen2Attention(nnx.Module):
         positions: jax.Array,
         hidden_states: jax.Array,
     ) -> jax.Array:
+        print("before qkv_proj")
         qkv, _ = self.qkv_proj(hidden_states)
+        print("after qkv_proj")
         
         q_size = self.q_size
         kv_size = self.kv_size
@@ -204,8 +212,11 @@ class Qwen2Attention(nnx.Module):
         v = qkv[..., q_size + kv_size:]
         
         q, k = self.rotary_emb(positions, q, k)
+        print("after rotary_emb")
         attn_output = self.attn(q, k, v)
+        print("after attn")
         output, _ = self.o_proj(attn_output)
+        print("after o_proj")
         return output
         
 
@@ -299,15 +310,19 @@ class Qwen2DecoderLayer(nnx.Module):
         else:
             hidden_states, residual = self.input_layernorm(
                 hidden_states, residual)
+        print("hidden_states:", hidden_states.shape)
         hidden_states = self.self_attn(
             positions=positions,
             hidden_states=hidden_states,
         )
+        print("hidden_states after attn:", hidden_states.shape)
 
         # Fully Connected
         hidden_states, residual = self.post_attention_layernorm(
             hidden_states, residual)
+        print("hidden_states after norm:", hidden_states.shape)
         hidden_states = self.mlp(hidden_states)
+        print("hidden_states after mlp:", hidden_states.shape)
         return hidden_states, residual
     
     
@@ -434,12 +449,15 @@ class Qwen2Model(nnx.Module):
             assert intermediate_tensors is not None
             hidden_states = intermediate_tensors["hidden_states"]
             residual = intermediate_tensors["residual"]
+        i : int = 0
         for layer in self.layers[self.start_layer:self.end_layer]:
+            print("layer:", i)
             hidden_states, residual = layer(
                 positions,
                 hidden_states,
                 residual,
             )
+            i += 1
         if not get_pp_group().is_last_rank:
             assert False, "Not implemented for jax"
             return IntermediateTensors({
@@ -600,13 +618,14 @@ class Qwen2ForCausalLM(nnx.Module):
     ) -> Union[jax.Array, IntermediateTensors]:
         hidden_states = self.model(input_ids, positions, intermediate_tensors,
                                    inputs_embeds)
+        print("did we reach here?")
         return hidden_states
 
     def compute_logits(
         self,
-        hidden_states: torch.Tensor,
+        hidden_states: jax.Array,
         sampling_metadata: SamplingMetadata,
-    ) -> Optional[torch.Tensor]:
+    ) -> Optional[jax.Array]:
         logits = self.logits_processor(self.lm_head, hidden_states,
                                        sampling_metadata)
         return logits

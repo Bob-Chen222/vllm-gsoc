@@ -153,10 +153,10 @@ class LinearMethodBase(QuantizeMethodBase):
     """Base class for different (maybe quantized) linear methods."""
 
     @abstractmethod
-    def create_weights(self, layer: torch.nn.Module,
+    def create_weights(self, layer: nnx.Module,
                        input_size_per_partition: int,
                        output_partition_sizes: list[int], input_size: int,
-                       output_size: int, params_dtype: torch.dtype,
+                       output_size: int, params_dtype: jnp.dtype,
                        **extra_weight_attrs):
         """Create weights for a linear layer. 
            The weights will be set as attributes of the layer.
@@ -175,9 +175,9 @@ class LinearMethodBase(QuantizeMethodBase):
 
     @abstractmethod
     def apply(self,
-              layer: torch.nn.Module,
-              x: torch.Tensor,
-              bias: Optional[torch.Tensor] = None) -> torch.Tensor:
+              layer: nnx.Module,
+              x: jax.Array,
+              bias: Optional[jax.Array] = None) -> jax.Array:
         """Apply the weights in layer to the input tensor.
         Expects create_weights to have been called before on the layer."""
         raise NotImplementedError
@@ -189,7 +189,7 @@ class UnquantizedLinearMethod(LinearMethodBase):
     def create_weights(self, layer: nnx.Module,
                        input_size_per_partition: int,
                        output_partition_sizes: list[int], input_size: int,
-                       output_size: int, params_dtype: torch.dtype,
+                       output_size: int, params_dtype: jnp.dtype,
                        **extra_weight_attrs):
         layer.weight = nnx.Param(
                 jnp.empty((sum(output_partition_sizes), input_size_per_partition), dtype=params_dtype)
@@ -506,15 +506,18 @@ class ColumnParallelLinear(LinearBase):
     def __call__(self, input_
     ) -> Union[jax.Array, tuple[jax.Array, Optional[Parameter]]]:
         bias = self.bias if not self.skip_bias_add else None
-
         # Matrix multiply.
         assert self.quant_method is not None
+        print("before apply input", input_.shape)
         output_parallel = self.quant_method.apply(self, input_, bias)
+        print("after apply", output_parallel.shape)
         # NOTE (Bob): This is a hack for now
         output = output_parallel
         output_bias = self.bias if self.skip_bias_add else None
         if not self.return_bias:
+            print("finish1")
             return output
+        print("finish2")
         return output, output_bias
 
 

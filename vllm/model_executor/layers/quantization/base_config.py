@@ -8,6 +8,10 @@ from typing import TYPE_CHECKING, Any, Optional
 import torch
 from torch import nn
 
+import jax
+from flax import nnx
+import jax.numpy as jnp
+
 if TYPE_CHECKING:
     from vllm.model_executor.layers.quantization import QuantizationMethods
 else:
@@ -18,7 +22,7 @@ class QuantizeMethodBase(ABC):
     """Base class for different quantized methods."""
 
     @abstractmethod
-    def create_weights(self, layer: torch.nn.Module, *weight_args,
+    def create_weights(self, layer: nnx.Module, *weight_args,
                        **extra_weight_attrs):
         """Create weights for a layer.
 
@@ -26,21 +30,21 @@ class QuantizeMethodBase(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    def apply(self, layer: torch.nn.Module, *args, **kwargs) -> torch.Tensor:
+    def apply(self, layer: nnx.Module, *args, **kwargs) -> jax.Array:
         """Apply the weights in layer to the input tensor.
 
         Expects create_weights to have been called before on the layer."""
         raise NotImplementedError
 
     # Not required functions
-    def embedding(self, layer: torch.nn.Module, *args,
-                  **kwargs) -> torch.Tensor:
+    def embedding(self, layer: nnx.Module, *args,
+                  **kwargs) -> jax.Array:
         """Gather embeddings in the layer based on indices in the input tensor.
 
         Expects create_weights to have been called before on the layer."""
         raise NotImplementedError
 
-    def process_weights_after_loading(self, layer: nn.Module) -> None:
+    def process_weights_after_loading(self, layer: nnx.Module) -> None:
         """Process the weight after loading.
 
         This can be used for example, to transpose weights for computation.
