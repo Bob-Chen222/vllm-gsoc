@@ -1,10 +1,10 @@
 import pytest
+# NB: torch is required for HF reference model.
 import torch
 
 from transformers import Qwen2Config, Qwen2ForCausalLM as HFQwen2ForCausalLM
 
-from vllm.config import ModelConfig, VllmConfig, set_current_vllm_config
-from vllm.distributed.parallel_state import initialize_model_parallel
+from vllm.config import VllmConfig, set_current_vllm_config
 from vllm.platforms import current_platform
 from vllm.model_executor.models.qwen2 import Qwen2ForCausalLM as VllmQwen2ForCausalLM
 
@@ -58,6 +58,7 @@ def test_qwen2_hidden_states_match_hf():
     hf_out = hf_model(input_ids, output_hidden_states=True, return_dict=True)
     hf_hidden = hf_out.hidden_states[-1].squeeze(0)  # (seq_len, hidden)
 
+    # The model's ``__call__`` is JAX-centric; use ``forward`` for torch flow.
     vllm_hidden = vllm_model(input_ids.squeeze(0), positions)
 
     # 7. Compare.
