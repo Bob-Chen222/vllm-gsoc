@@ -618,7 +618,6 @@ class Qwen2ForCausalLM(nnx.Module):
     ) -> Union[jax.Array, IntermediateTensors]:
         hidden_states = self.model(input_ids, positions, intermediate_tensors,
                                    inputs_embeds)
-        print("did we reach here?")
         return hidden_states
 
     def compute_logits(

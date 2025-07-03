@@ -204,8 +204,11 @@ class UnquantizedLinearMethod(LinearMethodBase):
               layer: nnx.Module,
               x: jax.Array,
               bias: Optional[jax.Array] = None) -> jax.Array:
-
-        return x @ layer.weight.value.T + (bias if bias is not None else 0)
+        print("enter apply")
+        print("layer: ", str(layer))
+        res = x @ layer.weight.value.T + (bias if bias is not None else 0)
+        print("exit apply")
+        return res
 
 class LinearBase(nnx.Module):
     """Base linear layer.
@@ -1468,6 +1471,7 @@ class QKVCrossParallelLinear(LinearBase):
         self.kv_size = self.kv_proj_encoder.num_kv_heads * head_size
 
         if bias:
+            assert False
             self.bias = torch.nn.Parameter()
             set_weight_attrs(self.bias, {
                 "output_dim": 0,

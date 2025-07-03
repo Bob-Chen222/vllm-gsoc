@@ -828,7 +828,7 @@ class TPUModelRunner(LoRAModelRunnerMixin):
             # then the embedding layer is not included in the CUDA graph.
             return input_ids, None
 
-    @torch.no_grad()
+    # @torch.no_grad()
     def execute_model(
         self,
         scheduler_output: "SchedulerOutput",
@@ -1455,11 +1455,11 @@ class TPUModelRunner(LoRAModelRunnerMixin):
                 compiled_model.original_code_object)
             compiled_model.compiled_codes.clear()
 
-    @torch.compile(backend="openxla", fullgraph=True, dynamic=False)
+    # @torch.compile(backend="openxla", fullgraph=True, dynamic=False)
     def select_hidden_states(self, hidden_states, indices_do_sample):
         return hidden_states[indices_do_sample]
 
-    @torch.compile(backend="openxla", fullgraph=True, dynamic=False)
+    # @torch.compile(backend="openxla", fullgraph=True, dynamic=False)
     def compute_logits(self,
                        sample_hidden_states: torch.Tensor) -> torch.Tensor:
         return self.model.compute_logits(sample_hidden_states, None)
@@ -1481,7 +1481,7 @@ class TPUModelRunner(LoRAModelRunnerMixin):
                                       sampling_metadata).sampled_token_ids
         return out_tokens
 
-    @torch.compile(backend="openxla", fullgraph=True, dynamic=False)
+    # @torch.compile(backend="openxla", fullgraph=True, dynamic=False)
     def gather_logprobs(self, logits: torch.Tensor,
                         sampled_tokens: torch.Tensor) -> LogprobsTensors:
         """
@@ -1495,7 +1495,7 @@ class TPUModelRunner(LoRAModelRunnerMixin):
             self.model_config.max_logprobs,
             token_ids=sampled_tokens.squeeze(-1))
 
-    @torch.compile(backend="openxla", fullgraph=True, dynamic=False)
+    # @torch.compile(backend="openxla", fullgraph=True, dynamic=False)
     def structured_decode(self, require_struct_decoding: torch.Tensor,
                           grammar_bitmask: torch.Tensor, logits: torch.Tensor,
                           arange: torch.Tensor) -> torch.Tensor:
