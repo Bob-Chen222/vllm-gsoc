@@ -12,7 +12,7 @@ from flax import nnx
 import jax
 import jax.numpy as jnp
 from functools import partial
-from jax.experimental.pallas.ops.tpu.ragged_paged_attention.kernel import ragged_paged_attention_kernel
+from jax.experimental.pallas.ops.tpu.ragged_paged_attention.kernel import ragged_paged_attention
 
 from vllm.attention.backends.abstract import (AttentionBackend, AttentionImpl,
                                               AttentionLayer, AttentionType)
@@ -212,24 +212,6 @@ class PallasAttentionBackendImpl(AttentionImpl, nnx.Module):
             sliding_window=self.sliding_window,
             soft_cap=self.logits_soft_cap,
         )
-
-        output = ragged_paged_attention_kernel(
-            attn_metadata.context_lens,
-            attn_metadata.block_tables,
-            attn_metadata.query_start_loc,
-            # attn_metadata.block_tables, #placeholder, need to figure it out
-            query,
-            kv_cache,
-            # By default, the system utilizes optimized block size and
-            # vmem_limit_bytes parameters from the kernel repository. However,
-            # these can be manually adjusted for debugging if necessary.
-            num_kv_pages_per_block=None,
-            num_queries_per_block=None,
-            vmem_limit_bytes=None,
-            sm_scale=self.scale,
-            sliding_window=self.sliding_window,
-            soft_cap=self.logits_soft_cap,
-        )
         
         return output.reshape(num_tokens, hidden_size)
     
@@ -274,9 +256,9 @@ class PallasAttentionBackendImpl(AttentionImpl, nnx.Module):
             write_to_kv_cache(key, value, kv_cache, slot_mapping)
         
         # then do the attention
-        output = ragged_paged_attention_kernel(
+        output = ragged_paged_attention(
             query,
-            kv_cache[0] if isinstance(kv_cache, tuple) else kv_cache,
+            kv_cache,
             attn_metadata.context_lens,
             attn_metadata.block_tables,
             attn_metadata.query_start_loc,
