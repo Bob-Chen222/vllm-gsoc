@@ -89,6 +89,39 @@ class LogitsProcessor(nnx.Module):
                 logits = _apply_logits_processors(logits, sampling_metadata)
 
         return logits
+    
+    def __call__(
+        self,
+        lm_head: VocabParallelEmbedding,
+        hidden_states: jax.Array,
+        sampling_metadata: Optional[SamplingMetadata] = None,
+        embedding_bias: Optional[jax.Array] = None,
+    ) -> Optional[jax.Array]:
+        if self.logits_as_input:
+            logits = hidden_states
+        else:
+            if sampling_metadata is not None:
+                assert False, "Sampling metadata is not supported for JAX"
+                hidden_states = _prune_hidden_states(hidden_states,
+                                                     sampling_metadata)
+
+            # Get the logits for the next tokens.
+            logits = self._get_logits(hidden_states, lm_head, embedding_bias)
+        if logits is not None:
+            if self.soft_cap is not None:
+                logits = logits / self.soft_cap
+                logits = jnp.tanh(logits)
+                logits = logits * self.soft_cap
+
+            if self.scale != 1.0:
+                logits *= self.scale
+
+            # Apply logits processors (if any).
+            if sampling_metadata is not None and \
+                sampling_metadata.seq_groups is not None:
+                logits = _apply_logits_processors(logits, sampling_metadata)
+
+        return logits
 
     def _gather_logits(self, logits: jax.Array) -> jax.Array:
         """gather/all-gather the logits tensor across model parallel group."""

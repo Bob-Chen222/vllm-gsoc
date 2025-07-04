@@ -45,10 +45,14 @@ class UnquantizedEmbeddingMethod(QuantizeMethodBase):
         set_weight_attrs(weight, extra_weight_attrs)
 
     def apply(self,
-              layer: torch.nn.Module,
-              x: torch.Tensor,
-              bias: Optional[torch.Tensor] = None) -> torch.Tensor:
-        return dispatch_unquantized_gemm()(x, layer.weight, bias)
+          layer: nnx.Module,
+          x: jax.Array,
+          bias: Optional[jax.Array] = None) -> jax.Array:
+        out = jnp.dot(x, layer.weight.T)  # transpose if weights are (out_dim, in_dim)
+        out.block_until_ready()  # catches device errors here
+        if bias is not None:
+            out += bias
+        return out
 
     def embedding(self, layer: nnx.Module,
                   input_: jax.Array) -> jax.Array:
