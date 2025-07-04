@@ -1282,6 +1282,7 @@ class TPUModelRunner(LoRAModelRunnerMixin):
         """
         Precompile all the subgraphs with possible input shapes.
         """
+        return
         with self.maybe_setup_dummy_loras(self.lora_config):
             self._precompile_mm_encoder()
             self._precompile_backbone()
