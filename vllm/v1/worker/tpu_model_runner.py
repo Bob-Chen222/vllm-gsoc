@@ -11,6 +11,7 @@ import torch
 import torch.nn as nn
 import jax
 import jax.numpy as jnp
+from flax import nnx
 # TPU XLA related
 import torch_xla.core.xla_model as xm
 import torch_xla.distributed.spmd as xs
@@ -129,6 +130,7 @@ class TPUModelRunner(LoRAModelRunnerMixin):
         # SPMD Related
         self.use_spmd = envs.VLLM_XLA_USE_SPMD
         if self.use_spmd:
+            assert False, "not used for now"
             num_devices = xr.global_runtime_device_count()
             mesh_shape = (num_devices, 1)
             device_ids = np.array(range(num_devices))
@@ -192,10 +194,10 @@ class TPUModelRunner(LoRAModelRunnerMixin):
         self.encoder_cache_size = encoder_cache_size
 
         # Lazy initialization
-        self.model: nn.Module  # Set after load_model
-        self.kv_caches: list[torch.Tensor] = []
+        self.model: nnx.Module  # Set after load_model
+        self.kv_caches: list[jax.Array] = []
         # req_id -> (input_id -> encoder_output)
-        self.encoder_cache: dict[str, dict[int, torch.Tensor]] = {}
+        self.encoder_cache: dict[str, dict[int, jax.Array]] = {}
 
         # Request states.
         self.requests: dict[str, CachedRequestState] = {}
@@ -292,14 +294,7 @@ class TPUModelRunner(LoRAModelRunnerMixin):
                                        max_num_mm_items_decoder_budget)
                 self.max_num_mm_items_by_modality[modality] = max_num_mm_items
 
-        if not self.use_spmd:
-            self.sample_from_logits_func = torch.compile(
-                self.sample_from_logits,
-                backend="openxla",
-                fullgraph=True,
-                dynamic=False)
-        else:
-            self.sample_from_logits_func = self.sample_from_logits
+        self.sample_from_logits_func = self.sample_from_logits
 
     def _update_num_xla_graphs(self, case_str):
         check_comp = self.check_recompilation and not self.enforce_eager
@@ -452,7 +447,7 @@ class TPUModelRunner(LoRAModelRunnerMixin):
 
         return len(unscheduled_req_ids) > 0 or len(req_ids_to_add) > 0
 
-    def get_model(self) -> nn.Module:
+    def get_model(self) -> nnx.Module:
         return self.model
 
     def get_kv_cache_spec(self) -> dict[str, KVCacheSpec]:
@@ -679,6 +674,7 @@ class TPUModelRunner(LoRAModelRunnerMixin):
         embeds: torch.Tensor,
         is_embed: Optional[torch.Tensor],
     ) -> torch.Tensor:
+        assert False, "not used for now"
         if is_embed is None:
             return embeds
 
@@ -694,12 +690,14 @@ class TPUModelRunner(LoRAModelRunnerMixin):
         placeholders: torch.Tensor,
         is_embed: Optional[torch.Tensor],
     ) -> torch.Tensor:
+        assert False, "not used for now"
         if is_embed is None:
             return placeholders
 
         return placeholders[is_embed]
 
     def _execute_mm_encoder(self, scheduler_output: "SchedulerOutput"):
+        assert False, "not used for now"
         scheduled_encoder_inputs = scheduler_output.scheduled_encoder_inputs
         if not scheduled_encoder_inputs:
             return
@@ -774,6 +772,7 @@ class TPUModelRunner(LoRAModelRunnerMixin):
         self,
         scheduler_output: "SchedulerOutput",
     ) -> list[torch.Tensor]:
+        assert False, "not used for now"
         mm_embeds: list[torch.Tensor] = []
         for req_id in self.input_batch.req_ids:
             num_scheduled_tokens = scheduler_output.num_scheduled_tokens[
@@ -809,8 +808,8 @@ class TPUModelRunner(LoRAModelRunnerMixin):
                 mm_embeds.append(encoder_output)
         return mm_embeds
 
-    def _get_model_inputs(self, input_ids: torch.Tensor,
-                          mm_embeds: list[torch.Tensor]):
+    def _get_model_inputs(self, input_ids: jax.Array,
+                          mm_embeds: list[jax.Array]):
         if self.is_multimodal_model:
             # NOTE(woosuk): To unify token ids and soft tokens (vision
             # embeddings), we always use embeddings (rather than token ids)
@@ -864,6 +863,8 @@ class TPUModelRunner(LoRAModelRunnerMixin):
                 positions=self.position_ids,
                 inputs_embeds=inputs_embeds,
             )
+        
+        assert False, "make sure the previous works first"
         hidden_states = self.select_hidden_states(hidden_states,
                                                   logits_indices)
         logits = self.compute_logits(hidden_states)
@@ -1282,7 +1283,6 @@ class TPUModelRunner(LoRAModelRunnerMixin):
         """
         Precompile all the subgraphs with possible input shapes.
         """
-        return
         with self.maybe_setup_dummy_loras(self.lora_config):
             self._precompile_mm_encoder()
             self._precompile_backbone()
@@ -1442,6 +1442,7 @@ class TPUModelRunner(LoRAModelRunnerMixin):
 
         if self.use_spmd:
             # Shard KV Cache
+            assert False, "not used for now"
             for cache in self.kv_caches:
                 xs.mark_sharding(cache, self.mesh, (None, 'x', None, None))
 
@@ -1462,21 +1463,21 @@ class TPUModelRunner(LoRAModelRunnerMixin):
 
     # @torch.compile(backend="openxla", fullgraph=True, dynamic=False)
     def compute_logits(self,
-                       sample_hidden_states: torch.Tensor) -> torch.Tensor:
+                       sample_hidden_states: jax.Array) -> jax.Array:
         return self.model.compute_logits(sample_hidden_states, None)
 
     # TODO: Under SPMD mode, sample_from_logits has correctness issue.
     #       Re-enable the torch.compile once the issue is fixed in torchxla.
     # @torch.compile(backend="openxla", fullgraph=True, dynamic=False)
     def sample_from_logits(
-            self, logits: torch.Tensor,
-            sampling_metadata: TPUSupportedSamplingMetadata) -> torch.Tensor:
+            self, logits: jax.Array,
+            sampling_metadata: TPUSupportedSamplingMetadata) -> jax.Array:
         """
         Sample with xla-friendly function. This function is to be traced 
         separately from `forward` for lighter compilation overhead.
         """
         if sampling_metadata.all_greedy:
-            out_tokens = torch.argmax(logits, dim=-1, keepdim=True)
+            out_tokens = jnp.argmax(logits, axis=-1, keepdims=True)
         else:
             out_tokens = self.sampler(logits,
                                       sampling_metadata).sampled_token_ids
@@ -1679,6 +1680,7 @@ def replace_set_lora(model):
         self._original_reset_lora(index)
         xm.mark_step()
 
+    assert False, "not used for now"
     for _, module in model.named_modules():
         if isinstance(module, BaseLayerWithLoRA):
             module._original_set_lora = module.set_lora
