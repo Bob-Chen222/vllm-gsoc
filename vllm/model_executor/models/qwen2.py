@@ -366,6 +366,7 @@ class Qwen2Model(nnx.Module):
         self.quant_config = quant_config
         self.vocab_size = config.vocab_size
 
+        #NOTE (Bob): hardcoding
         if get_pp_group().is_first_rank or (config.tie_word_embeddings
                                             and get_pp_group().is_last_rank):
             self.embed_tokens = VocabParallelEmbedding(
@@ -478,7 +479,6 @@ class Qwen2Model(nnx.Module):
             ("gate_up_proj", "up_proj", 1),
         ]
         params_dict = nnx.state(self)
-        # print("params_dict:", params_dict.keys())
         loaded_params: set[str] = set()
         for name, loaded_weight in weights:
             if "rotary_emb.inv_freq" in name:
@@ -506,7 +506,6 @@ class Qwen2Model(nnx.Module):
                 # if is_pp_missing_parameter(name, self):
                 #     continue
 
-                print("name_list:", name_list)
                 param : nnx.State = params_dict[name_list[0]]
                 layer_num = -1
                 if len(name_list) > 1:

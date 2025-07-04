@@ -739,8 +739,6 @@ class MergedColumnParallelLinear(ColumnParallelLinear):
                     "the same for all partitions.")
 
         assert param_data.shape == loaded_weight.shape
-        print("param weight shape", param['weight'].value.shape)
-        print("param: ", str(param))
         loaded_weight = loaded_weight.astype(jnp.float32)
         param['weight'].value = jax.lax.dynamic_update_slice(param['weight'].value, loaded_weight, (shard_offset, 0))
 

@@ -356,6 +356,7 @@ class HfRunner:
                 trust_remote_code=trust_remote_code,
             )
         else:
+            print("we are here")
             model = auto_cls.from_pretrained(
                 model_name,
                 trust_remote_code=trust_remote_code,
@@ -371,6 +372,7 @@ class HfRunner:
             if (getattr(model, "quantization_method", None) != "bitsandbytes"
                     and len({p.device
                              for p in model.parameters()}) < 2):
+                print("self.device", self.device)
                 model = model.to(device=self.device)
 
             self.model = model
