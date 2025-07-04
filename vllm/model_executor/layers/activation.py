@@ -8,6 +8,10 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from flax import nnx
+import jax
+import jax.numpy as jnp
+
 from vllm.distributed import (divide, get_tensor_model_parallel_rank,
                               get_tensor_model_parallel_world_size)
 from vllm.model_executor.custom_op import CustomOp
@@ -96,6 +100,11 @@ class SiluAndMul(CustomOp):
         s = x_reshaped[:, :d] * F.sigmoid(x_reshaped[:, :d])
         result = s * x_reshaped[:, d:]
         return result.view(*x.shape[:-1], d)
+    
+    def __call__(self, x: jax.Array) -> jax.Array:
+        """PyTorch-native implementation equivalent to forward()."""
+        d = x.shape[-1] // 2
+        return nnx.silu(x[..., :d]) * x[..., d:]
 
 
 @CustomOp.register("mul_and_silu")
