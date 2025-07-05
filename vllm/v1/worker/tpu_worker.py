@@ -133,7 +133,7 @@ class TPUWorker:
         # NOTE(woosuk): Set per-rank cache path since different ranks
         # can have slightly different XLA graphs.
         world_size = self.parallel_config.world_size
-        rank = xr.global_ordinal()
+        rank = jax.process_index()
         # The PyTorch/XLA compilation cache uses the Torch IR to generate keys.
         # Consequently, changes in optimization flags, which affect compilation
         # results, don't change the cache key. This can result in the wrong

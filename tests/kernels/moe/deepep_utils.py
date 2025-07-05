@@ -8,6 +8,7 @@ import traceback
 from typing import Callable, Optional
 
 import torch
+import jax
 from torch.distributed import ProcessGroup
 from torch.multiprocessing import (
     spawn)  # pyright: ignore[reportPrivateImportUsage]
@@ -76,7 +77,8 @@ def _worker_parallel_launch(
         traceback.print_exc()
         raise
     finally:
-        torch.distributed.destroy_process_group()
+        # torch.distributed.destroy_process_group()
+        jax.distributed.shutdown()
 
 
 def parallel_launch(

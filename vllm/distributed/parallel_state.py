@@ -778,10 +778,12 @@ class GroupCoordinator:
 
     def destroy(self):
         if self.device_group is not None:
-            torch.distributed.destroy_process_group(self.device_group)
+            # torch.distributed.destroy_process_group(self.device_group)
+            jax.distributed.shutdown()
             self.device_group = None
         if self.cpu_group is not None:
-            torch.distributed.destroy_process_group(self.cpu_group)
+            # torch.distributed.destroy_process_group(self.cpu_group)
+            jax.distributed.shutdown()
             self.cpu_group = None
         if self.device_communicator is not None:
             self.device_communicator.destroy()
@@ -942,16 +944,17 @@ def init_distributed_environment(
         logger.info(
             "Adjusting world_size=%d rank=%d distributed_init_method=%s for DP",
             world_size, rank, distributed_init_method)
-    if not torch.distributed.is_initialized():
-        assert distributed_init_method is not None, (
-            "distributed_init_method must be provided when initializing "
-            "distributed environment")
-        # this backend is used for WORLD
-        torch.distributed.init_process_group(
-            backend=backend,
-            init_method=distributed_init_method,
-            world_size=world_size,
-            rank=rank)
+    # if not torch.distributed.is_initialized():
+    #     assert distributed_init_method is not None, (
+    #         "distributed_init_method must be provided when initializing "
+    #         "distributed environment")
+    #     # this backend is used for WORLD
+    #     torch.distributed.init_process_group(
+    #         backend=backend,
+    #         init_method=distributed_init_method,
+    #         world_size=world_size,
+    #         rank=rank)
+    jax.distributed.initialize()
     # set the local rank
     # local_rank is not available in torch ProcessGroup,
     # see https://github.com/pytorch/pytorch/issues/122816
@@ -1000,10 +1003,11 @@ def initialize_model_parallel(
     """
     # Get world size and rank. Ensure some consistencies.
     assert torch.distributed.is_initialized()
-    world_size: int = torch.distributed.get_world_size()
-    rank = torch.distributed.get_rank()
+    world_size: int = jax.process_count()
+    rank = jax.process_index()
     backend = backend or torch.distributed.get_backend(
         get_world_group().device_group)
+    assert backend == "gloo", "Only Gloo backend is supported"
 
     data_parallel_size = 1
     from vllm.config import get_current_vllm_config
@@ -1020,7 +1024,7 @@ def initialize_model_parallel(
     # otherwise it will cause deadlock.
     # to get group_ranks for each dimension, transpose that dimension to the
     # last dimension, then reshape to 2D, then unbind the last dimension
-    all_ranks = torch.arange(world_size).reshape(
+    all_ranks = jnp.arange(world_size).reshape(
         -1, data_parallel_size, pipeline_model_parallel_size,
         tensor_model_parallel_size)  # noqa
 
@@ -1041,9 +1045,10 @@ def initialize_model_parallel(
     global _PP
     assert _PP is None, (
         "pipeline model parallel group is already initialized")
-    group_ranks = all_ranks.transpose(2, 3).reshape(
-        -1, pipeline_model_parallel_size).unbind(0)
-    group_ranks = [x.tolist() for x in group_ranks]
+    group_ranks = jnp.transpose(all_ranks, (0, 1, 3, 2)).reshape(
+    -1, pipeline_model_parallel_size)
+# Convert to list of arrays (equivalent to unbind(0))
+    group_ranks = [group_ranks[i] for i in range(group_ranks.shape[0])]
     _PP = init_model_parallel_group(group_ranks,
                                     get_world_group().local_rank,
                                     backend,
@@ -1051,10 +1056,9 @@ def initialize_model_parallel(
 
     global _DP
     assert _DP is None, ("data parallel group is already initialized")
-    group_ranks = all_ranks.transpose(1,
-                                      3).reshape(-1,
-                                                 data_parallel_size).unbind(0)
-    group_ranks = [x.tolist() for x in group_ranks]
+    group_ranks = jnp.transpose(all_ranks, (0, 2, 1)).reshape(
+        -1, data_parallel_size)
+    group_ranks = [group_ranks[i] for i in range(group_ranks.shape[0])]
     _DP = init_model_parallel_group(group_ranks,
                                     get_world_group().local_rank,
                                     backend,
@@ -1062,9 +1066,9 @@ def initialize_model_parallel(
 
     global _EP
     assert _EP is None, ("expert parallel group is already initialized")
-    group_ranks = all_ranks.transpose(1, 2).reshape(
-        -1, data_parallel_size * tensor_model_parallel_size).unbind(0)
-    group_ranks = [x.tolist() for x in group_ranks]
+    group_ranks = jnp.transpose(all_ranks, (0, 2, 1)).reshape(
+        -1, data_parallel_size * tensor_model_parallel_size)
+    group_ranks = [group_ranks[i] for i in range(group_ranks.shape[0])]
     _EP = init_model_parallel_group(group_ranks,
                                     get_world_group().local_rank,
                                     backend,
@@ -1195,14 +1199,16 @@ def destroy_distributed_environment():
         _WORLD.destroy()
     _WORLD = None
     if torch.distributed.is_initialized():
-        torch.distributed.destroy_process_group()
+        # torch.distributed.destroy_process_group()
+        jax.distributed.shutdown()
 
 
 def cleanup_dist_env_and_memory(shutdown_ray: bool = False):
     destroy_model_parallel()
     destroy_distributed_environment()
     with contextlib.suppress(AssertionError):
-        torch.distributed.destroy_process_group()
+        # torch.distributed.destroy_process_group()
+        jax.distributed.shutdown()
     if shutdown_ray:
         import ray  # Lazy import Ray
         ray.shutdown()
