@@ -1092,6 +1092,7 @@ def ensure_model_parallel_initialized(
     """
     backend = backend or torch.distributed.get_backend(
         get_world_group().device_group)
+    assert backend == "gloo", "Only Gloo backend is supported"
     if not model_parallel_is_initialized():
         initialize_model_parallel(tensor_model_parallel_size,
                                   pipeline_model_parallel_size, backend)

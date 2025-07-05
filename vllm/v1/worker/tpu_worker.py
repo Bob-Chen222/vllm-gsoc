@@ -140,10 +140,12 @@ class TPUWorker:
         # compilation being used. To prevent this, disabling the XLA compilation
         # cache during development is recommended.We can disable it by
         # `export VLLM_XLA_CACHE_PATH=`
-        if envs.VLLM_XLA_CACHE_PATH:
-            per_rank_path = os.path.join(envs.VLLM_XLA_CACHE_PATH,
-                                         f"tp{world_size}_rank{rank}")
-            xr.initialize_cache(per_rank_path, readonly=False)
+        
+        # NOTE(Bob): I don't think we need this for now
+        # if envs.VLLM_XLA_CACHE_PATH:
+        #     per_rank_path = os.path.join(envs.VLLM_XLA_CACHE_PATH,
+        #                                  f"tp{world_size}_rank{rank}")
+        #     xr.initialize_cache(per_rank_path, readonly=False)
 
         # Init ModelRunner here, so that we have access to self.device.
         self.model_runner = \
@@ -155,7 +157,6 @@ class TPUWorker:
             report_usage_stats(self.vllm_config)
 
     def determine_available_memory(self) -> int:
-        # NOTE(Bob): why is it a dict though?
         kv_caches: dict[str, jax.Array] = {}
         kv_cache_spec = self.model_runner.get_kv_cache_spec()
         for layer_name, layer_spec in kv_cache_spec.items():
