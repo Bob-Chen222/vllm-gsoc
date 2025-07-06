@@ -219,7 +219,7 @@ class GroupCoordinator:
         self.unique_name = _get_unique_name(group_name)
         _register_group(self)
 
-        self.rank = torch.distributed.get_rank()
+        self.rank = jax.process_index()
         self.local_rank = local_rank
         self.device_group = None
         self.cpu_group = None
@@ -234,12 +234,12 @@ class GroupCoordinator:
             if self.rank in ranks:
                 self.ranks = ranks
                 self.world_size = len(ranks)
-                self.rank_in_group = ranks.index(self.rank)
+                self.rank_in_group = ranks.at(self.rank)
                 # self.device_group = device_group
                 # self.cpu_group = cpu_group
 
-        assert self.cpu_group is not None
-        assert self.device_group is not None
+        # assert self.cpu_group is not None
+        # assert self.device_group is not None
 
         from vllm.platforms import current_platform
 
@@ -968,7 +968,7 @@ def init_distributed_environment(
             local_rank = rank
     global _WORLD
     if _WORLD is None:
-        ranks = list(range(torch.distributed.get_world_size()))
+        ranks = list(range(jax.process_count()))
         _WORLD = init_world_group(ranks, local_rank, backend)
     else:
         assert _WORLD.world_size == torch.distributed.get_world_size(), (
@@ -1003,11 +1003,12 @@ def initialize_model_parallel(
     ranks 8 to 15 belong to the second box.
     """
     # Get world size and rank. Ensure some consistencies.
-    assert torch.distributed.is_initialized()
+    # assert torch.distributed.is_initialized()
     world_size: int = jax.process_count()
     rank = jax.process_index()
-    backend = backend or torch.distributed.get_backend(
-        get_world_group().device_group)
+    # backend = backend or torch.distributed.get_backend(
+    #     get_world_group().device_group)
+    backend = "gloo"
     assert backend == "gloo", "Only Gloo backend is supported"
 
     data_parallel_size = 1
@@ -1032,7 +1033,7 @@ def initialize_model_parallel(
     # Build the tensor model-parallel groups.
     global _TP
     assert _TP is None, ("tensor model parallel group is already initialized")
-    group_ranks = all_ranks.view(-1, tensor_model_parallel_size).unbind(0)
+    group_ranks = jnp.reshape(all_ranks, (-1, tensor_model_parallel_size))
     group_ranks = [x.tolist() for x in group_ranks]
 
     # message queue broadcaster is only used in tensor model parallel group
@@ -1048,8 +1049,10 @@ def initialize_model_parallel(
         "pipeline model parallel group is already initialized")
     group_ranks = jnp.transpose(all_ranks, (0, 1, 3, 2)).reshape(
     -1, pipeline_model_parallel_size)
-# Convert to list of arrays (equivalent to unbind(0))
+    # Convert to list of arrays (equivalent to unbind(0))
     group_ranks = [group_ranks[i] for i in range(group_ranks.shape[0])]
+    print("group ranks type:", type(group_ranks))
+    print("ranks: ", group_ranks)
     _PP = init_model_parallel_group(group_ranks,
                                     get_world_group().local_rank,
                                     backend,
@@ -1091,8 +1094,9 @@ def ensure_model_parallel_initialized(
     or ensure tensor-parallel and pipeline-parallel sizes are equal to expected
     values if the model parallel groups are initialized.
     """
-    backend = backend or torch.distributed.get_backend(
-        get_world_group().device_group)
+    # backend = backend or torch.distributed.get_backend(
+    #     get_world_group().device_group)
+    backend = "gloo"
     assert backend == "gloo", "Only Gloo backend is supported"
     if not model_parallel_is_initialized():
         initialize_model_parallel(tensor_model_parallel_size,
