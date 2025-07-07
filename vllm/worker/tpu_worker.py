@@ -331,6 +331,7 @@ def _insert_kv(
     tpu_k_cache: torch.Tensor,
     tpu_v_cache: torch.Tensor,
 ) -> None:
+    assert False, "not supported in jax"
     torch.ops.xla.dynamo_set_buffer_donor_(tpu_k_cache, True)
     torch.ops.xla.dynamo_set_buffer_donor_(tpu_v_cache, True)
     tpu_k_cache[:, indices] = k

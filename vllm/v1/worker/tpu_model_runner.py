@@ -845,13 +845,13 @@ class TPUModelRunner(LoRAModelRunnerMixin):
             mm_embeds = self._gather_mm_embeddings(scheduler_output)
         else:
             mm_embeds = []
-        xm.mark_step()
+        # xm.mark_step()
         # Prepare inputs
         attn_metadata, logits_indices, padded_num_reqs = self._prepare_inputs(
             scheduler_output)
         input_ids, inputs_embeds = self._get_model_inputs(
             self.input_ids, mm_embeds)
-        xm.mark_step()
+        # xm.mark_step()
         num_reqs = self.input_batch.num_reqs
         # Run the decoder
         with set_forward_context(
@@ -1015,8 +1015,8 @@ class TPUModelRunner(LoRAModelRunnerMixin):
         # Sync all pending XLA execution during model initialization and weight
         # loading.
         assert model is not None, "Model is None after loading"
-        xm.mark_step()
-        xm.wait_device_ops()
+        # xm.mark_step()
+        # xm.wait_device_ops()
         if not hasattr(self, "model"):
             print("assigned model!!")
             self.model = model
@@ -1083,6 +1083,7 @@ class TPUModelRunner(LoRAModelRunnerMixin):
 
     def _set_active_loras(self, prompt_lora_mapping, token_lora_mapping,
                           lora_requests) -> None:
+        assert False, "not supported in jax"
         xm.mark_step()  # Captures input updates
         super()._set_active_loras(prompt_lora_mapping, token_lora_mapping,
                                   lora_requests)
@@ -1283,6 +1284,9 @@ class TPUModelRunner(LoRAModelRunnerMixin):
         """
         Precompile all the subgraphs with possible input shapes.
         """
+        # NOTE (Bob): we are not using compilation anymore
+        assert False, "not supported"
+        return
         with self.maybe_setup_dummy_loras(self.lora_config):
             self._precompile_mm_encoder()
             self._precompile_backbone()
@@ -1323,11 +1327,11 @@ class TPUModelRunner(LoRAModelRunnerMixin):
             # Isolate encoder graph from post-processing to minimize
             # impact of recompilation until it's fixed.
             start = time.perf_counter()
-            xm.mark_step()
+            # xm.mark_step()
             dummy_encoder_outputs = self.model.get_multimodal_embeddings(
                 **batched_dummy_mm_inputs)
-            xm.mark_step()
-            xm.wait_device_ops()
+            # xm.mark_step()
+            # xm.wait_device_ops()
             end = time.perf_counter()
             logger.info(
                 "Multimodal Encoder profiling finished in in %.2f [secs].",
@@ -1346,8 +1350,8 @@ class TPUModelRunner(LoRAModelRunnerMixin):
         # Trigger compilation for general shape.
         self._dummy_run(num_tokens)
 
-        xm.mark_step()
-        xm.wait_device_ops()
+        # xm.mark_step()
+        # xm.wait_device_ops()
         self.encoder_cache.clear()
         gc.collect()
 
@@ -1447,6 +1451,7 @@ class TPUModelRunner(LoRAModelRunnerMixin):
                 xs.mark_sharding(cache, self.mesh, (None, 'x', None, None))
 
     def reset_dynamo_cache(self):
+        assert False, "not used for now"
         if self.is_multimodal_model:
             compiled_model = self.model.get_language_model().model
         else:

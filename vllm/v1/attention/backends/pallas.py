@@ -180,6 +180,7 @@ class PallasAttentionBackendImpl(AttentionImpl, nnx.Module):
             shape = [num_tokens, num_heads * head_size]
         """
         # For determine_available_memory case.
+        assert False, "disabled by jax"
         if kv_cache.numel() == 0:
             if output is None:
                 output = torch.ones_like(query)
@@ -273,6 +274,7 @@ class PallasAttentionBackendImpl(AttentionImpl, nnx.Module):
             sliding_window=self.sliding_window,
             soft_cap=self.logits_soft_cap,
         )
+        output = jnp.zeros((num_tokens, hidden_size))
 
         return output.reshape(num_tokens, hidden_size)
 

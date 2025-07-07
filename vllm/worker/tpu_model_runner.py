@@ -136,6 +136,7 @@ class TPUModelRunner(ModelRunnerBase[ModelInputForTPU]):
                 (block_table_size / smem_size))
 
     def load_model(self) -> None:
+        assert False, "we are not using it"
         self.device = self.device_config.device
 
         # NOTE(woosuk): While the executor assigns the TP ranks to the worker
