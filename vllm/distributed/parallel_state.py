@@ -234,7 +234,8 @@ class GroupCoordinator:
             if self.rank in ranks:
                 self.ranks = ranks
                 self.world_size = len(ranks)
-                self.rank_in_group = ranks.at(self.rank)
+                print("type of ranks in loop:", type(ranks))
+                self.rank_in_group = ranks.index(self.rank)
                 # self.device_group = device_group
                 # self.cpu_group = cpu_group
 
@@ -838,6 +839,8 @@ def init_model_parallel_group(
     use_message_queue_broadcaster: bool = False,
     group_name: Optional[str] = None,
 ) -> GroupCoordinator:
+    
+    print("type of group_ranks in model parallel:", type(group_ranks))
 
     return GroupCoordinator(
         group_ranks=group_ranks,
@@ -1051,8 +1054,6 @@ def initialize_model_parallel(
     -1, pipeline_model_parallel_size)
     # Convert to list of arrays (equivalent to unbind(0))
     group_ranks = [group_ranks[i] for i in range(group_ranks.shape[0])]
-    print("group ranks type:", type(group_ranks))
-    print("ranks: ", group_ranks)
     _PP = init_model_parallel_group(group_ranks,
                                     get_world_group().local_rank,
                                     backend,
