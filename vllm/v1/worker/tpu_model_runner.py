@@ -864,7 +864,6 @@ class TPUModelRunner(LoRAModelRunnerMixin):
                 inputs_embeds=inputs_embeds,
             )
         
-        assert False, "make sure the previous works first"
         hidden_states = self.select_hidden_states(hidden_states,
                                                   logits_indices)
         logits = self.compute_logits(hidden_states)
@@ -1418,7 +1417,7 @@ class TPUModelRunner(LoRAModelRunnerMixin):
 
                     # tpu_kv_cache = torch.zeros(kv_cache_shape,
                     #                            dtype=dtype).to(self.device)
-                    if dtype != torch.bfloat16:
+                    if dtype != jnp.bfloat16:
                         assert False, "only hardcoded one datatype for jax"
                     tpu_kv_cache = jnp.zeros(
                         kv_cache_shape,

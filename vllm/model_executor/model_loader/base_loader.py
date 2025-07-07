@@ -36,12 +36,12 @@ class BaseModelLoader(ABC):
                    model_config: ModelConfig) -> nnx.Module:
         """Load a model with the given configurations."""
         device_config = vllm_config.device_config
-        target_device = torch.device(device_config.device)
-        with set_default_torch_dtype(model_config.dtype):
-            with target_device:
-                model = initialize_model(vllm_config=vllm_config,
-                                         model_config=model_config)
+        # target_device = torch.device(device_config.device)
+        # with target_device:
+        model = initialize_model(vllm_config=vllm_config,
+                                    model_config=model_config)
             # Quantization does not happen in `load_weights` but after it
-            self.load_weights(model, model_config)
-            process_weights_after_loading(model, model_config, target_device)
+        self.load_weights(model, model_config)
+        # NOTE(Bob): no need for processing target_device
+        # process_weights_after_loading(model, model_config, target_device)
         return model

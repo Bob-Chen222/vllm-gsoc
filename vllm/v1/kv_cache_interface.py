@@ -6,6 +6,8 @@ from dataclasses import dataclass
 from typing import Optional
 
 import torch
+import jax
+import jax.numpy as jnp
 from typing_extensions import Self
 
 from vllm.config import VllmConfig
@@ -72,7 +74,7 @@ class KVCacheSpec:
 class AttentionSpec(KVCacheSpec):
     num_kv_heads: int
     head_size: int
-    dtype: torch.dtype
+    dtype: jnp.dtype
     use_mla: bool
 
     @property

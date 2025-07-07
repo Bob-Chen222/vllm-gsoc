@@ -106,8 +106,8 @@ class TPUWorker:
         os.environ["LIBTPU_INIT_ARGS"] = (
             os.environ.get("LIBTPU_INIT_ARGS", "") +
             " --xla_tpu_force_1d_allreduce_at_chunk_count=1")
-        torch.set_grad_enabled(False)
-        torch.set_default_dtype(self.model_config.dtype)
+        # torch.set_grad_enabled(False)
+        # torch.set_default_dtype(self.model_config.dtype)
 
         # Initialize the distributed environment.
         self._init_tpu_worker_distributed_environment(

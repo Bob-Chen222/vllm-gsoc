@@ -58,6 +58,8 @@ import psutil
 import regex as re
 import torch
 import torch.types
+import jax
+import jax.numpy as jnp
 import yaml
 import zmq
 import zmq.asyncio
@@ -976,9 +978,9 @@ def async_tensor_h2d(
     return t.to(device=target_device, non_blocking=True)
 
 
-def get_dtype_size(dtype: torch.dtype) -> int:
+def get_dtype_size(dtype: jnp.dtype) -> int:
     """Get the size of the data type in bytes."""
-    return torch.tensor([], dtype=dtype).element_size()
+    return jnp.dtype(jnp.float32).itemsize
 
 
 # bool = 0, int = 1, float = 2, complex = 3
