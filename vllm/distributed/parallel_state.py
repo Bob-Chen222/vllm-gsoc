@@ -314,6 +314,7 @@ class GroupCoordinator:
     @contextmanager
     def graph_capture(
             self, graph_capture_context: Optional[GraphCaptureContext] = None):
+        assert False, "not implemented for JAX"
         if graph_capture_context is None:
             stream = torch.cuda.Stream()
             graph_capture_context = GraphCaptureContext(stream)
@@ -367,9 +368,11 @@ class GroupCoordinator:
             return self._all_reduce_out_place(input_)
 
     def _all_reduce_out_place(self, input_: torch.Tensor) -> torch.Tensor:
+        assert False, "not implemented for JAX"
         return self.device_communicator.all_reduce(input_)
 
     def all_gather(self, input_: torch.Tensor, dim: int = -1) -> torch.Tensor:
+        assert False, "not implemented for JAX"
         world_size = self.world_size
         # Bypass the function if we are using only 1 GPU.
         if world_size == 1:
@@ -387,11 +390,13 @@ class GroupCoordinator:
 
     def _all_gather_out_place(self, input_: torch.Tensor,
                               dim: int) -> torch.Tensor:
+        assert False, "not implemented for JAX"
         return self.device_communicator.all_gather(input_, dim)
 
     def reduce_scatter(self,
                        input_: torch.Tensor,
                        dim: int = -1) -> torch.Tensor:
+        assert False, "not implemented for JAX"
         world_size = self.world_size
         # Bypass the function if we are using only 1 GPU.
         if world_size == 1:
@@ -409,6 +414,7 @@ class GroupCoordinator:
 
     def _reduce_scatter_out_place(self, input_: torch.Tensor,
                                   dim: int) -> torch.Tensor:
+        assert False, "not implemented for JAX"
         return self.device_communicator.reduce_scatter(input_, dim)
 
     def gather(self,
@@ -481,6 +487,7 @@ class GroupCoordinator:
         if self.world_size == 1:
             return obj_list
         # Broadcast.
+        assert False, "not implemented for JAX"
         torch.distributed.broadcast_object_list(obj_list,
                                                 src=self.ranks[src],
                                                 group=self.device_group)
@@ -495,6 +502,8 @@ class GroupCoordinator:
         assert dst != self.rank_in_group, (
             "Invalid destination rank. Destination rank is the same "
             "as the current rank.")
+        
+        assert False, "not implemented for JAX"
 
         # Serialize object to tensor and get the size as well
         object_tensor = torch.frombuffer(pickle.dumps(obj), dtype=torch.uint8)
@@ -526,6 +535,7 @@ class GroupCoordinator:
             "Invalid source rank. Source rank is the same as the current rank."
         )
 
+        assert False, "not implemented for JAX"
         size_tensor = torch.empty(1, dtype=torch.long, device="cpu")
 
         # Receive object size
@@ -560,6 +570,7 @@ class GroupCoordinator:
         """Broadcast the input tensor dictionary.
         NOTE: `src` is the local rank of the source rank.
         """
+        assert False, "not implemented for JAX"
         # Bypass the function if we are using only 1 GPU.
         if (not torch.distributed.is_initialized() or self.world_size == 1):
             return tensor_dict
@@ -644,6 +655,7 @@ class GroupCoordinator:
         """Send the input tensor dictionary.
         NOTE: `dst` is the local rank of the source rank.
         """
+        assert False, "not implemented for JAX"
         # Bypass the function if we are using only 1 GPU.
         if not torch.distributed.is_initialized() or self.world_size == 1:
             return tensor_dict
@@ -699,6 +711,7 @@ class GroupCoordinator:
         """Recv the input tensor dictionary.
         NOTE: `src` is the local rank of the source rank.
         """
+        assert False, "not implemented for JAX"
         # Bypass the function if we are using only 1 GPU.
         if not torch.distributed.is_initialized() or self.world_size == 1:
             return None
@@ -764,11 +777,13 @@ class GroupCoordinator:
         secretly created GPU tensors. It is easy to mess up the current
         device. Use the CPU group instead.
         """
+        assert False, "not implemented for JAX"
         torch.distributed.barrier(group=self.cpu_group)
 
     def send(self, tensor: torch.Tensor, dst: Optional[int] = None) -> None:
         """Sends a tensor to the destination rank in a non-blocking way"""
         """NOTE: `dst` is the local rank of the destination rank."""
+        assert False, "not implemented for JAX"
         self.device_communicator.send(tensor, dst)
 
     def recv(self,
@@ -777,6 +792,7 @@ class GroupCoordinator:
              src: Optional[int] = None) -> torch.Tensor:
         """Receives a tensor from the source rank."""
         """NOTE: `src` is the local rank of the source rank."""
+        assert False, "not implemented for JAX"
         return self.device_communicator.recv(size, dtype, src)
 
     def destroy(self):
@@ -801,6 +817,7 @@ class GroupCoordinator:
     def dispatch(
             self, hidden_states: torch.Tensor,
             router_logits: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+        assert False, "not implemented for JAX"
         if self.device_communicator is not None:
             return self.device_communicator.dispatch(hidden_states,
                                                      router_logits)
@@ -840,8 +857,6 @@ def init_model_parallel_group(
     use_message_queue_broadcaster: bool = False,
     group_name: Optional[str] = None,
 ) -> GroupCoordinator:
-    
-    print("type of group_ranks in model parallel:", type(group_ranks))
 
     return GroupCoordinator(
         group_ranks=group_ranks,
