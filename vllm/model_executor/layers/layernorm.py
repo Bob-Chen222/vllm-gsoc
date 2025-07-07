@@ -163,17 +163,19 @@ class RMSNorm(CustomOp):
         x: jax.Array,
         residual: Optional[jax.Array] = None,
     ) -> Union[jax.Array, tuple[jax.Array, jax.Array]]:
+        x.block_until_ready()
         orig_dtype = x.dtype
         x = x.astype(jnp.float32)
+        x.block_until_ready()
         if residual is not None:
             x = x + residual.astype(jnp.float32)
             residual = x.astype(orig_dtype)
-
+        x.block_until_ready()
         hidden_size = x.shape[-1]
         if hidden_size != self.hidden_size:
             raise ValueError("Expected hidden_size to be "
                              f"{self.hidden_size}, but found: {hidden_size}")
-
+        x.block_until_ready()
         if self.variance_size_override is None:
             x_var = x
         else:
@@ -185,15 +187,17 @@ class RMSNorm(CustomOp):
             x_var = x[:, :, :self.variance_size_override]
 
         variance = jnp.power(x_var, 2).mean(axis=-1, keepdims=True)
-
+        x.block_until_ready()
         x = x * (1.0 / jnp.sqrt(variance + self.variance_epsilon))
         x = x.astype(orig_dtype)
+        x.block_until_ready()
         if self.has_weight:
             x = x * self.weight
         if residual is None:
             return x
         else:
             return x, residual
+        x.block_until_ready()
 
     def extra_repr(self) -> str:
         s = f"hidden_size={self.weight.data.size(0)}"

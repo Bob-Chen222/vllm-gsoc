@@ -371,12 +371,13 @@ class GroupCoordinator:
         assert False, "not implemented for JAX"
         return self.device_communicator.all_reduce(input_)
 
-    def all_gather(self, input_: torch.Tensor, dim: int = -1) -> torch.Tensor:
-        assert False, "not implemented for JAX"
+    def all_gather(self, input_: jax.Array, dim: int = -1) -> jax.Array:
         world_size = self.world_size
         # Bypass the function if we are using only 1 GPU.
         if world_size == 1:
             return input_
+        
+        assert False, "parallel has not been implemented for JAX"
         assert -input_.dim() <= dim < input_.dim(), (
             f"Invalid dim ({dim}) for input tensor with shape {input_.size()}")
 

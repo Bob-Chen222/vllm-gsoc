@@ -28,7 +28,7 @@ from collections.abc import Iterable
 from typing import Any, Optional, Union
 
 import torch
-from torch import nn
+# from torch import nn
 from transformers import Qwen2Config
 
 from flax import nnx
@@ -310,12 +310,10 @@ class Qwen2DecoderLayer(nnx.Module):
         else:
             hidden_states, residual = self.input_layernorm(
                 hidden_states, residual)
-        print("hidden_states:", hidden_states.shape)
         hidden_states = self.self_attn(
             positions=positions,
             hidden_states=hidden_states,
         )
-        print("hidden_states after attn:", hidden_states.shape)
 
         # Fully Connected
         hidden_states, residual = self.post_attention_layernorm(
@@ -343,7 +341,7 @@ class Qwen2Model(nnx.Module):
                  *,
                  vllm_config: VllmConfig,
                  prefix: str = "",
-                 decoder_layer_type: type[nn.Module] = Qwen2DecoderLayer):
+                 decoder_layer_type: type[nnx.Module] = Qwen2DecoderLayer):
         super().__init__()
 
         config = vllm_config.model_config.hf_config

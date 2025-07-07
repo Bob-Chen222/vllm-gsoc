@@ -864,6 +864,7 @@ class TPUModelRunner(LoRAModelRunnerMixin):
                 inputs_embeds=inputs_embeds,
             )
         
+        # assert False, "still have error in forward"
         hidden_states = self.select_hidden_states(hidden_states,
                                                   logits_indices)
         logits = self.compute_logits(hidden_states)
@@ -885,7 +886,7 @@ class TPUModelRunner(LoRAModelRunnerMixin):
             if tpu_sampling_metadata.logprobs else None
 
         # Remove padding on cpu and keep dynamic op outside of xla graph.
-        selected_token_ids = selected_token_ids.cpu()[:num_reqs]
+        selected_token_ids = jax.device_get(selected_token_ids)
         logprobs_lists = logprobs.tolists() \
             if tpu_sampling_metadata.logprobs else None
 

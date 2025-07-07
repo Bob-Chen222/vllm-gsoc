@@ -49,7 +49,6 @@ class UnquantizedEmbeddingMethod(QuantizeMethodBase):
           x: jax.Array,
           bias: Optional[jax.Array] = None) -> jax.Array:
         out = jnp.dot(x, layer.weight.T)  # transpose if weights are (out_dim, in_dim)
-        out.block_until_ready()  # catches device errors here
         if bias is not None:
             out += bias
         return out

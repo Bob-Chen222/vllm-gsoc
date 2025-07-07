@@ -126,7 +126,7 @@ class LogitsProcessor(nnx.Module):
     def _gather_logits(self, logits: jax.Array) -> jax.Array:
         """gather/all-gather the logits tensor across model parallel group."""
         if self.use_all_gather:
-            assert False, "All-gather is not supported for JAX"
+            # assert False, "All-gather is not supported for JAX"
             # Gather is not supported for some devices such as TPUs.
             # Use all-gather instead.
             # NOTE(woosuk): Here, the outputs of every device should not be None
