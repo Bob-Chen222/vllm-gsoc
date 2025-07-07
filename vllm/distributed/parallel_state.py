@@ -1051,10 +1051,12 @@ def initialize_model_parallel(
     global _PP
     assert _PP is None, (
         "pipeline model parallel group is already initialized")
-    group_ranks = jnp.transpose(all_ranks, (0, 1, 3, 2)).reshape(
-    -1, pipeline_model_parallel_size)
-    # Convert to list of arrays (equivalent to unbind(0))
-    group_ranks = [group_ranks[i] for i in range(group_ranks.shape[0])]
+    # group_ranks = jnp.transpose(all_ranks, (0, 1, 3, 2)).reshape(
+    # -1, pipeline_model_parallel_size)
+    # # Convert to list of arrays (equivalent to unbind(0))
+    # group_ranks = [group_ranks[i] for i in range(group_ranks.shape[0])]
+    # NOTE (Bob): hardcoded!!
+    group_ranks = [[0]]
     _PP = init_model_parallel_group(group_ranks,
                                     get_world_group().local_rank,
                                     backend,
@@ -1062,9 +1064,11 @@ def initialize_model_parallel(
 
     global _DP
     assert _DP is None, ("data parallel group is already initialized")
-    group_ranks = jnp.transpose(all_ranks, (0, 2, 1)).reshape(
-        -1, data_parallel_size)
-    group_ranks = [group_ranks[i] for i in range(group_ranks.shape[0])]
+    # group_ranks = jnp.transpose(all_ranks, (0, 2, 1)).reshape(
+    #     -1, data_parallel_size)
+    # group_ranks = [group_ranks[i] for i in range(group_ranks.shape[0])]
+    # NOTE (Bob): hardcoded!!
+    group_ranks = [[0]]
     _DP = init_model_parallel_group(group_ranks,
                                     get_world_group().local_rank,
                                     backend,
@@ -1072,9 +1076,11 @@ def initialize_model_parallel(
 
     global _EP
     assert _EP is None, ("expert parallel group is already initialized")
-    group_ranks = jnp.transpose(all_ranks, (0, 2, 1)).reshape(
-        -1, data_parallel_size * tensor_model_parallel_size)
-    group_ranks = [group_ranks[i] for i in range(group_ranks.shape[0])]
+    # group_ranks = jnp.transpose(all_ranks, (0, 2, 1)).reshape(
+    #     -1, data_parallel_size * tensor_model_parallel_size)
+    # group_ranks = [group_ranks[i] for i in range(group_ranks.shape[0])]
+    # NOTE (Bob): hardcoded!!
+    group_ranks = [[0]]
     _EP = init_model_parallel_group(group_ranks,
                                     get_world_group().local_rank,
                                     backend,
