@@ -239,10 +239,12 @@ class TPUWorker:
             if self.profile_dir is None:
                 raise RuntimeError("Profiler is not enabled.")
             if is_start:
+                assert False, "not supported for jax"
                 if self.profiler is None:
                     self.profiler = xp.start_server(9012)
                 xp.start_trace(self.profile_dir)
             else:
+                assert False, "not supported for jax"
                 xp.stop_trace()
 
     def add_lora(self, lora_request: LoRARequest) -> bool:
@@ -259,7 +261,7 @@ class TPUWorker:
         # the model initialization and profiling.
         set_random_seed(self.model_config.seed)
 
-    def get_model(self) -> nn.Module:
+    def get_model(self) -> nnx.Module:
         return self.model_runner.get_model()
 
     def get_kv_cache_spec(self) -> dict[str, KVCacheSpec]:
