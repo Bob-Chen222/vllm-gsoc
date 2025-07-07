@@ -1058,12 +1058,12 @@ class TPUModelRunner(LoRAModelRunnerMixin):
             num_seqs=num_seqs,
         )
 
-        if self.is_multimodal_model:
-            torch._dynamo.mark_dynamic(inputs_embeds, 0)
-        else:
-            torch._dynamo.mark_dynamic(input_ids, 0)
-        torch._dynamo.mark_dynamic(position_ids, 0)
-        torch._dynamo.mark_dynamic(attn_metadata.slot_mapping, 0)
+        # if self.is_multimodal_model:
+            # torch._dynamo.mark_dynamic(inputs_embeds, 0)
+        # else:
+            # torch._dynamo.mark_dynamic(input_ids, 0)
+        # torch._dynamo.mark_dynamic(position_ids, 0)
+        # torch._dynamo.mark_dynamic(attn_metadata.slot_mapping, 0)
 
         layer_names = get_layers_from_vllm_config(self.vllm_config,
                                                   Attention).keys()

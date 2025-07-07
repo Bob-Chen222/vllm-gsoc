@@ -128,7 +128,7 @@ class TPUWorker:
         # dynamo graphs that can be compiled.
         # TODO (NickLucche) On gsm we compile 80+ graphs.
         # Re-evaluate limit, with MM we may get close to this limit.
-        torch._dynamo.config.cache_size_limit = 128
+        # torch._dynamo.config.cache_size_limit = 128
         # Use persistent cache to avoid XLA recompilation.
         # NOTE(woosuk): Set per-rank cache path since different ranks
         # can have slightly different XLA graphs.
