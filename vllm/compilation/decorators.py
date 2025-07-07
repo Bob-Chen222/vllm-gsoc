@@ -166,6 +166,7 @@ def _support_torch_compile(
     cls.__init__ = __init__
 
     def __call__(self, *args, **kwargs):
+        assert False, "not supported in jax"
         # torch.compiler.is_compiling() means we are inside the compilation
         # e.g. TPU has the compilation logic in model runner, so we don't
         # need to compile the model inside.

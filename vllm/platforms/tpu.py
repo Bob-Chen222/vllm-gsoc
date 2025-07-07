@@ -4,6 +4,8 @@
 from typing import TYPE_CHECKING, Optional, Union, cast
 
 import torch
+import jax
+import jax.numpy as jnp
 from tpu_info import device
 
 import vllm.envs as envs
@@ -43,7 +45,7 @@ class TpuPlatform(Platform):
 
     @classmethod
     def get_attn_backend_cls(cls, selected_backend: _Backend, head_size: int,
-                             dtype: torch.dtype, kv_cache_dtype: Optional[str],
+                             dtype: jnp.dtype, kv_cache_dtype: Optional[str],
                              block_size: int, use_v1: bool,
                              use_mla: bool) -> str:
         if (selected_backend != _Backend.PALLAS
@@ -75,7 +77,8 @@ class TpuPlatform(Platform):
         return "vllm.lora.punica_wrapper.punica_tpu.PunicaWrapperTPU"
 
     @classmethod
-    def get_infinity_values(cls, dtype: torch.dtype) -> tuple[float, float]:
+    def get_infinity_values(cls, dtype: jnp.dtype) -> tuple[float, float]:
+        assert False, "not supported on TPU"
         return torch.finfo(dtype).min, torch.finfo(dtype).max
 
     @classmethod
@@ -88,6 +91,7 @@ class TpuPlatform(Platform):
 
     @classmethod
     def inference_mode(cls):
+        assert False, "jax does not support inference mode"
         return torch.no_grad()
 
     @classmethod
@@ -111,11 +115,12 @@ class TpuPlatform(Platform):
         assert vllm_config.speculative_config is None, \
             "TPU does not support speculative decoding"
 
-        if vllm_config.model_config.dtype in (torch.float16, torch.float32):
-            logger.warning(
-                "The TPU backend currently does not support %s. "
-                "Using bfloat16 instead.", vllm_config.model_config.dtype)
-            vllm_config.model_config.dtype = torch.bfloat16
+        # if vllm_config.model_config.dtype in (torch.float16, torch.float32):
+        #     logger.warning(
+        #         "The TPU backend currently does not support %s. "
+        #         "Using bfloat16 instead.", vllm_config.model_config.dtype)
+        #     vllm_config.model_config.dtype = torch.bfloat16
+        vllm_config.model_config.dtype = jnp.bfloat16
 
         if envs.VLLM_USE_V1:
             from vllm.v1.attention.backends.pallas import (

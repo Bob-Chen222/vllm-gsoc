@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import os
 
-from torch_xla._internal import tpu
 from vllm.platforms import current_platform
 
 # Replace with the actual VllmRunner import
