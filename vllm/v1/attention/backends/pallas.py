@@ -258,7 +258,7 @@ class PallasAttentionBackendImpl(AttentionImpl, nnx.Module):
         
         print("query.shape", query.shape)
         print("query:", query)
-        print("kv_cache.shape", kv_cache[0].shape, kv_cache[1].shape)
+        print("kv_cache.shape", kv_cache.shape)
         print("kv_cache:", kv_cache)
         print("query start loc", attn_metadata.query_start_loc)
         print("attn_meta num_seqs", attn_metadata.num_seqs)
