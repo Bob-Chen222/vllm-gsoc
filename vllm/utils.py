@@ -980,7 +980,7 @@ def async_tensor_h2d(
 
 def get_dtype_size(dtype: jnp.dtype) -> int:
     """Get the size of the data type in bytes."""
-    return jnp.dtype(jnp.float32).itemsize
+    return jnp.dtype(dtype).itemsize
 
 
 # bool = 0, int = 1, float = 2, complex = 3

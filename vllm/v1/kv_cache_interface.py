@@ -81,8 +81,9 @@ class AttentionSpec(KVCacheSpec):
     def page_size_bytes(self) -> int:
         # For MLA we only store a single latent vector
         coef = 1 if self.use_mla else 2
-        return coef * self.block_size * self.num_kv_heads * self.head_size \
+        page_size_bytes = coef * self.block_size * self.num_kv_heads * self.head_size \
                 * get_dtype_size(self.dtype)
+        return page_size_bytes
 
 
 @dataclass
