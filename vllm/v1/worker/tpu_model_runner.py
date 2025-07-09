@@ -218,19 +218,13 @@ class TPUModelRunner(LoRAModelRunnerMixin):
         # Sometimes the numpy op is faster so we create both.
         self.input_ids_cpu = jax.device_put(jnp.zeros(self.max_num_tokens, dtype=jnp.int32), 
                                             jax.devices("cpu")[0])
-        self.positions_cpu = jax.device_put(jnp.zeros(self.max_num_tokens, dtype=jnp.int32),
-                                            jax.devices("cpu")[0])
-        self.positions_np = np.array(self.positions_cpu)
+        self.positions_np = np.array(jnp.zeros(self.max_num_tokens, dtype=jnp.int32))
 
         self.block_table_cpu = jax.device_put(jnp.zeros((self.max_num_reqs, self.max_num_blocks_per_req), 
                                               dtype= jnp.int32)
                                               , jax.devices("cpu")[0])
 
-        self.query_start_loc_cpu = jax.device_put(
-            jnp.zeros(self.max_num_tokens + 1, dtype=jnp.int32),
-            jax.devices("cpu")[0]
-        )
-        self.query_start_loc_np = np.array(self.query_start_loc_cpu)
+        self.query_start_loc_np = np.array(jnp.zeros(self.max_num_tokens + 1, dtype=jnp.int32))
 
         self.seq_lens_cpu = jax.device_put(jnp.zeros(self.max_num_reqs, dtype=jnp.int32),
                                             jax.devices("cpu")[0])
@@ -598,7 +592,7 @@ class TPUModelRunner(LoRAModelRunnerMixin):
             self.input_ids_cpu[:padded_total_num_scheduled_tokens], 
             jax.devices()[0]
         )
-        self.position_ids = jax.device_put(self.positions_cpu[:padded_total_num_scheduled_tokens], jax.devices()[0])
+        self.position_ids = jax.device_put(self.positions_np[:padded_total_num_scheduled_tokens], jax.devices()[0])
 
         self.input_batch.block_table[0].slot_mapping_cpu = self.input_batch.block_table[0].\
         slot_mapping_cpu [:padded_total_num_scheduled_tokens].at[total_num_scheduled_tokens:].set(_PAD_SLOT_ID)
@@ -611,7 +605,7 @@ class TPUModelRunner(LoRAModelRunnerMixin):
                         self.input_batch.block_table[0].get_cpu_tensor()[:num_reqs]
                        )
         block_tables = jax.device_put(block_tables, jax.devices()[0])
-        query_start_loc = jax.device_put(self.query_start_loc_cpu[:self.max_num_reqs + 1], 
+        query_start_loc = jax.device_put(self.query_start_loc_np[:self.max_num_reqs + 1], 
                                          jax.devices()[0])
         seq_lens = jax.device_put(self.seq_lens_cpu[:self.max_num_reqs], jax.devices()[0])
         print("seq_lens", seq_lens)
@@ -647,7 +641,7 @@ class TPUModelRunner(LoRAModelRunnerMixin):
             num_reqs, self.max_num_reqs)
         # Indices at which we sample (positions of last token in the sequence).
         # Padded to avoid recompiling when `num_reqs` varies.
-        logits_indices = self.query_start_loc_cpu[1:padded_num_reqs + 1] - 1
+        logits_indices = self.query_start_loc_np[1:padded_num_reqs + 1] - 1
         logits_indices = jax.device_put(logits_indices, jax.devices()[0])
 
         if self.lora_config is not None:
@@ -888,8 +882,7 @@ class TPUModelRunner(LoRAModelRunnerMixin):
 
         # Remove padding on cpu and keep dynamic op outside of xla graph.
         selected_token_ids = jax.device_get(selected_token_ids)
-        logprobs_lists = logprobs.tolists() \
-            if tpu_sampling_metadata.logprobs else None
+        logprobs_lists = logprobs.tolists() if logprobs is not None else None
 
         # Update the cache state concurrently. Code above will not block until
         # we use `selected_token_ids`. Add mark_step if post-processing changes
