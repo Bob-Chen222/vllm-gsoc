@@ -257,11 +257,11 @@ class PallasAttentionBackendImpl(AttentionImpl, nnx.Module):
             write_to_kv_cache(key, value, kv_cache, slot_mapping)
         
         print("query.shape", query.shape)
-        print("query:", query)
         print("kv_cache.shape", kv_cache.shape)
-        print("kv_cache:", kv_cache)
-        print("query start loc", attn_metadata.query_start_loc)
-        print("attn_meta num_seqs", attn_metadata.num_seqs)
+        print("context_lens", attn_metadata.context_lens.shape)
+        print("block_tables", attn_metadata.block_tables.shape)
+        print("query_start_loc", attn_metadata.query_start_loc.shape)
+        print("num_seqs", attn_metadata.num_seqs.shape)
         # then do the attention
         output = ragged_paged_attention(
             query,
@@ -280,8 +280,6 @@ class PallasAttentionBackendImpl(AttentionImpl, nnx.Module):
             sliding_window=self.sliding_window,
             soft_cap=self.logits_soft_cap,
         )
-        # output = jnp.zeros((num_tokens, hidden_size))
-        print("output is", output)
 
         return output.reshape(num_tokens, hidden_size)
 
