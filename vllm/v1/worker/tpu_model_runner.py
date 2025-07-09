@@ -216,18 +216,15 @@ class TPUModelRunner(LoRAModelRunnerMixin):
         # Cached torch/numpy tensor
         # The pytorch tensor and numpy array share the same buffer.
         # Sometimes the numpy op is faster so we create both.
-        self.input_ids_cpu = jax.device_put(jnp.zeros(self.max_num_tokens, dtype=jnp.int32), 
-                                            jax.devices("cpu")[0])
+        self.input_ids_cpu = np.array(jnp.zeros(self.max_num_tokens, dtype=jnp.int32))
         self.positions_np = np.array(jnp.zeros(self.max_num_tokens, dtype=jnp.int32))
 
-        self.block_table_cpu = jax.device_put(jnp.zeros((self.max_num_reqs, self.max_num_blocks_per_req), 
-                                              dtype= jnp.int32)
-                                              , jax.devices("cpu")[0])
+        self.block_table_cpu = np.array(jnp.zeros((self.max_num_reqs, self.max_num_blocks_per_req), 
+                                              dtype= jnp.int32))
 
         self.query_start_loc_np = np.array(jnp.zeros(self.max_num_tokens + 1, dtype=jnp.int32))
 
-        self.seq_lens_cpu = jax.device_put(jnp.zeros(self.max_num_reqs, dtype=jnp.int32),
-                                            jax.devices("cpu")[0])
+        self.seq_lens_cpu = np.array(jnp.zeros(self.max_num_reqs, dtype=jnp.int32))
         self.seq_lens_np = np.array(self.seq_lens_cpu)
 
         # Range tensor with values [0 .. self.max_num_tokens - 1].
