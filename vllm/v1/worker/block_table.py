@@ -32,16 +32,13 @@ class BlockTable:
             (max_num_reqs, max_num_blocks_per_req),
             dtype=jnp.int32,
         )
-        self.block_table_cpu = jax.device_put(
-            jnp.zeros((max_num_reqs, max_num_blocks_per_req), dtype=jnp.int32),
-            device=jax.devices("cpu")[0])
+        self.block_table_cpu = np.array(jnp.zeros((max_num_reqs, max_num_blocks_per_req), dtype=jnp.int32))
         
         self.block_table_np = np.array(self.block_table_cpu)
         self.num_blocks_per_row = np.zeros(max_num_reqs, dtype=np.int32)
 
-        self.slot_mapping_cpu = jax.device_put(
-            jnp.zeros(self.max_num_batched_tokens, dtype=jnp.int64),
-            device=jax.devices("cpu")[0])
+        self.slot_mapping_cpu = np.array(
+            jnp.zeros(self.max_num_batched_tokens, dtype=jnp.int64))
         self.slot_mapping_np = np.array(self.slot_mapping_cpu)
         self.slot_mapping = jnp.zeros(
             self.max_num_batched_tokens,
