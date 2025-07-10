@@ -595,6 +595,7 @@ class Qwen2ForCausalLM(nnx.Module):
     def get_input_embeddings(self, input_ids: torch.Tensor) -> torch.Tensor:
         return self.model.get_input_embeddings(input_ids)
 
+    @jax.jit
     def forward(
         self,
         input_ids: torch.Tensor,
@@ -617,6 +618,7 @@ class Qwen2ForCausalLM(nnx.Module):
                                    inputs_embeds)
         return hidden_states
 
+    @jax.jit
     def compute_logits(
         self,
         hidden_states: jax.Array,

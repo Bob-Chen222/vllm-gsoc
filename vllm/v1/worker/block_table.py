@@ -55,7 +55,7 @@ class BlockTable:
         num_blocks = len(block_ids)
         start = self.num_blocks_per_row[row_idx]
         self.num_blocks_per_row[row_idx] += num_blocks
-        self.block_table_np[row_idx, start:start + num_blocks] = block_ids
+        self.block_table_cpu[row_idx, start:start + num_blocks] = block_ids
 
     def add_row(self, block_ids: list[int], row_idx: int) -> None:
         self.num_blocks_per_row[row_idx] = 0
@@ -63,7 +63,7 @@ class BlockTable:
 
     def move_row(self, src: int, tgt: int) -> None:
         num_blocks = self.num_blocks_per_row[src]
-        self.block_table_np[tgt, :num_blocks] = self.block_table_np[
+        self.block_table_cpu[tgt, :num_blocks] = self.block_table_cpu[
             src, :num_blocks]
         self.num_blocks_per_row[tgt] = num_blocks
 
@@ -73,7 +73,7 @@ class BlockTable:
         self.num_blocks_per_row[src] = num_blocks_tgt
         self.num_blocks_per_row[tgt] = num_blocks_src
 
-        self.block_table_np[[src, tgt]] = self.block_table_np[[tgt, src]]
+        self.block_table_cpu[[src, tgt]] = self.block_table_cpu[[tgt, src]]
 
     def commit(self, num_reqs: int) -> None:
         self.block_table[:num_reqs].copy_(self.block_table_cpu[:num_reqs],
@@ -93,8 +93,8 @@ class BlockTable:
 
     def get_numpy_array(self) -> np.ndarray:
         """Returns the numpy array of the block table."""
-        # NOTE(Bob): now block_table_np and block_table_cpu are not the same
-        return self.block_table_np
+        # NOTE(Bob): now block_table_np and block_table_cpu are the same
+        return self.block_table_cpu
 
 
 class MultiGroupBlockTable:

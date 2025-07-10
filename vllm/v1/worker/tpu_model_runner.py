@@ -217,12 +217,12 @@ class TPUModelRunner(LoRAModelRunnerMixin):
         # The pytorch tensor and numpy array share the same buffer.
         # Sometimes the numpy op is faster so we create both.
         self.input_ids_cpu = np.array(jnp.zeros(self.max_num_tokens, dtype=jnp.int32))
-        self.positions_np = np.array(jnp.zeros(self.max_num_tokens, dtype=jnp.int32))
+        self.positions_cpu = np.array(jnp.zeros(self.max_num_tokens, dtype=jnp.int32))
 
         self.block_table_cpu = np.array(jnp.zeros((self.max_num_reqs, self.max_num_blocks_per_req), 
                                               dtype= jnp.int32))
 
-        self.query_start_loc_np = np.array(jnp.zeros(self.max_num_tokens + 1, dtype=jnp.int32))
+        self.query_start_loc_cpu = np.array(jnp.zeros(self.max_num_tokens + 1, dtype=jnp.int32))
 
         self.seq_lens_cpu = np.array(jnp.zeros(self.max_num_reqs, dtype=jnp.int32))
         self.seq_lens_np = np.array(self.seq_lens_cpu)
@@ -230,7 +230,7 @@ class TPUModelRunner(LoRAModelRunnerMixin):
         # Range tensor with values [0 .. self.max_num_tokens - 1].
         # Used to initialize positions / context_lens / seq_lens
         # Keep in int64 to avoid overflow with long context
-        self.arange_np = np.arange(self.max_num_tokens, dtype=np.int64)
+        self.arange_cpu = np.arange(self.max_num_tokens, dtype=np.int64)
         self.num_reqs_paddings = _get_req_paddings(
             min_req_size=MIN_NUM_SEQS, max_req_size=self.max_num_reqs)
 
@@ -518,26 +518,26 @@ class TPUModelRunner(LoRAModelRunnerMixin):
         # Get request indices.
         # E.g., [2, 5, 3] -> [0, 0, 1, 1, 1, 1, 1, 2, 2, 2]
         # For each scheduled token, what are the corresponding req index.
-        req_indices = np.repeat(self.arange_np[:num_reqs],
+        req_indices = np.repeat(self.arange_cpu[:num_reqs],
                                 num_scheduled_tokens_per_req)
 
         # Get batched arange.
         # E.g., [2, 5, 3] -> [0, 1, 0, 1, 2, 3, 4, 0, 1, 2]
         # For each scheduled token, what is its position in corresponding req.
         arange = np.concatenate(
-            [self.arange_np[:n] for n in num_scheduled_tokens_per_req])
+            [self.arange_cpu[:n] for n in num_scheduled_tokens_per_req])
 
         # Get positions.
-        positions_np = self.positions_np[:total_num_scheduled_tokens]
+        positions_cpu = self.positions_cpu[:total_num_scheduled_tokens]
         np.add(self.input_batch.num_computed_tokens_cpu[req_indices],
                arange,
-               out=positions_np)
+               out=positions_cpu)
 
         # Get token indices.
         # E.g., [0, 1, 0, 1, 2, 3, 4, 0, 1, 2]
         # -> [0, 1, M, M + 1, M + 2, M + 3, M + 4, 2 * M, 2 * M + 1, 2 * M + 2]
         # where M is the max_model_len.
-        token_indices = (positions_np +
+        token_indices = (positions_cpu +
                          req_indices * self.input_batch.token_ids_cpu.shape[1])
 
         # NOTE(woosuk): We use torch.index_select instead of np.take here
@@ -556,25 +556,25 @@ class TPUModelRunner(LoRAModelRunnerMixin):
         # because M (max_model_len) is not necessarily divisible by block_size.
         # req_indices: # E.g., [2, 5, 3] -> [0, 0, 1, 1, 1, 1, 1, 2, 2, 2]
         block_table_indices = (req_indices * self.max_num_blocks_per_req +
-                               positions_np // self.block_size)
+                               positions_cpu // self.block_size)
         # NOTE(woosuk): We use torch.index_select instead of np.take here
         # because torch.index_select is much faster than np.take for large
         # tensors.
         block_table_cpu = self.input_batch.block_table[0].get_cpu_tensor()
         block_numbers = np.array(block_table_cpu.flatten()[block_table_indices])
-        block_offsets = positions_np % self.block_size
+        block_offsets = positions_cpu % self.block_size
         np.add(block_numbers * self.block_size,
                block_offsets,
                out=self.input_batch.block_table[0].
-               slot_mapping_np[:total_num_scheduled_tokens])
+               slot_mapping_cpu[:total_num_scheduled_tokens])
 
         # Prepare the attention metadata.
-        self.query_start_loc_np[0] = 0
+        self.query_start_loc_cpu[0] = 0
         np.cumsum(num_scheduled_tokens_per_req,
-                  out=self.query_start_loc_np[1:num_reqs + 1])
-        self.query_start_loc_np[num_reqs + 1:] = 1
+                  out=self.query_start_loc_cpu[1:num_reqs + 1])
+        self.query_start_loc_cpu[num_reqs + 1:] = 1
 
-        self.seq_lens_np[:num_reqs] = (
+        self.seq_lens_cpu[:num_reqs] = (
             self.input_batch.num_computed_tokens_cpu[:num_reqs] +
             num_scheduled_tokens_per_req)
 
@@ -588,7 +588,7 @@ class TPUModelRunner(LoRAModelRunnerMixin):
             self.input_ids_cpu[:padded_total_num_scheduled_tokens], 
             jax.devices()[0]
         )
-        self.position_ids = jax.device_put(self.positions_np[:padded_total_num_scheduled_tokens], jax.devices()[0])
+        self.position_ids = jax.device_put(self.positions_cpu[:padded_total_num_scheduled_tokens], jax.devices()[0])
 
         self.input_batch.block_table[0].slot_mapping_cpu[
             total_num_scheduled_tokens:] = _PAD_SLOT_ID
@@ -600,7 +600,7 @@ class TPUModelRunner(LoRAModelRunnerMixin):
         block_tables[:num_reqs, :self.max_num_blocks_per_req] = (
             self.input_batch.block_table[0].get_cpu_tensor()[:num_reqs])
         block_tables = jax.device_put(block_tables, jax.devices()[0])
-        query_start_loc = jax.device_put(self.query_start_loc_np[:self.max_num_reqs + 1], 
+        query_start_loc = jax.device_put(self.query_start_loc_cpu[:self.max_num_reqs + 1], 
                                          jax.devices()[0])
         seq_lens = jax.device_put(self.seq_lens_cpu[:self.max_num_reqs], jax.devices()[0])
         print("seq_lens", seq_lens)
@@ -636,7 +636,7 @@ class TPUModelRunner(LoRAModelRunnerMixin):
             num_reqs, self.max_num_reqs)
         # Indices at which we sample (positions of last token in the sequence).
         # Padded to avoid recompiling when `num_reqs` varies.
-        logits_indices = self.query_start_loc_np[1:padded_num_reqs + 1] - 1
+        logits_indices = self.query_start_loc_cpu[1:padded_num_reqs + 1] - 1
         logits_indices = jax.device_put(logits_indices, jax.devices()[0])
 
         if self.lora_config is not None:
@@ -1013,6 +1013,7 @@ class TPUModelRunner(LoRAModelRunnerMixin):
 
     @torch.no_grad()
     def _dummy_run(self, num_tokens: int) -> None:
+        assert False, "no dummy run in jax"
         if self.is_multimodal_model:
             input_ids = None
             inputs_embeds = torch.zeros((num_tokens, self.hidden_size),

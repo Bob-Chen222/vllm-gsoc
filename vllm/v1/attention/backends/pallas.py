@@ -256,15 +256,6 @@ class PallasAttentionBackendImpl(AttentionImpl, nnx.Module):
             slot_mapping = attn_metadata.slot_mapping
             write_to_kv_cache(key, value, kv_cache, slot_mapping)
         
-        print("query.shape", query)
-        print("kv_cache", kv_cache)
-        print("context_lens", attn_metadata.context_lens)
-        print("block_tables", attn_metadata.block_tables)
-        print("query_start_loc", attn_metadata.query_start_loc)
-        print("num_seqs", attn_metadata.num_seqs)
-        print("self.scale", self.scale)
-        print("self.sliding_window", self.sliding_window)
-        print("self.logits_soft_cap", self.logits_soft_cap)
         # then do the attention
         output = ragged_paged_attention(
             query,
