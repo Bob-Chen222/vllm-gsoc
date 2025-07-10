@@ -544,7 +544,7 @@ class TPUModelRunner(LoRAModelRunnerMixin):
         # because torch.index_select is much faster than np.take for large
         # tensors.
         self.input_ids_cpu[:total_num_scheduled_tokens] = np.take(
-            self.input_batch.token_ids.flatten(),
+            self.input_batch.token_ids_cpu.flatten(),
             token_indices
         )
 
@@ -582,23 +582,23 @@ class TPUModelRunner(LoRAModelRunnerMixin):
         padded_total_num_scheduled_tokens = _get_padded_token_len(
             self.num_tokens_paddings, total_num_scheduled_tokens)
         # Zero out to avoid spurious values from prev iteration (last cp chunk)
-        self.input_ids_cpu = self.input_ids_cpu.at[total_num_scheduled_tokens:padded_total_num_scheduled_tokens].set(0)
+        self.input_ids_cpu[
+            total_num_scheduled_tokens:padded_total_num_scheduled_tokens] = 0
         self.input_ids = jax.device_put(
             self.input_ids_cpu[:padded_total_num_scheduled_tokens], 
             jax.devices()[0]
         )
         self.position_ids = jax.device_put(self.positions_np[:padded_total_num_scheduled_tokens], jax.devices()[0])
 
-        self.input_batch.block_table[0].slot_mapping_cpu = self.input_batch.block_table[0].\
-        slot_mapping_cpu [:padded_total_num_scheduled_tokens].at[total_num_scheduled_tokens:].set(_PAD_SLOT_ID)
+        self.input_batch.block_table[0].slot_mapping_cpu[
+            total_num_scheduled_tokens:] = _PAD_SLOT_ID
 
         slot_mapping = jax.device_put(self.input_batch.block_table[0].slot_mapping_cpu[:padded_total_num_scheduled_tokens], 
                                       jax.devices()[0])
 
         block_tables = self.block_table_cpu[:self.max_num_reqs]
-        block_tables = block_tables.at[:num_reqs, :self.max_num_blocks_per_req].set(
-                        self.input_batch.block_table[0].get_cpu_tensor()[:num_reqs]
-                       )
+        block_tables[:num_reqs, :self.max_num_blocks_per_req] = (
+            self.input_batch.block_table[0].get_cpu_tensor()[:num_reqs])
         block_tables = jax.device_put(block_tables, jax.devices()[0])
         query_start_loc = jax.device_put(self.query_start_loc_np[:self.max_num_reqs + 1], 
                                          jax.devices()[0])
