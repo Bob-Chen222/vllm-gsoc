@@ -508,16 +508,12 @@ class ColumnParallelLinear(LinearBase):
         bias = self.bias if not self.skip_bias_add else None
         # Matrix multiply.
         assert self.quant_method is not None
-        print("before apply input", input_.shape)
         output_parallel = self.quant_method.apply(self, input_, bias)
-        print("after apply", output_parallel.shape)
         # NOTE (Bob): This is a hack for now
         output = output_parallel
         output_bias = self.bias if self.skip_bias_add else None
         if not self.return_bias:
-            print("finish1")
             return output
-        print("finish2")
         return output, output_bias
 
 

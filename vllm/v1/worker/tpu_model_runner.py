@@ -1462,6 +1462,7 @@ class TPUModelRunner(LoRAModelRunnerMixin):
     # @torch.compile(backend="openxla", fullgraph=True, dynamic=False)
     def compute_logits(self,
                        sample_hidden_states: jax.Array) -> jax.Array:
+        print("sample_hidden_states.shape is", sample_hidden_states.shape)
         return self.model.compute_logits(sample_hidden_states, None)
 
     # TODO: Under SPMD mode, sample_from_logits has correctness issue.

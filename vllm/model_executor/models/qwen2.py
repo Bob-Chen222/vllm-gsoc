@@ -201,9 +201,7 @@ class Qwen2Attention(nnx.Module):
         positions: jax.Array,
         hidden_states: jax.Array,
     ) -> jax.Array:
-        print("before qkv_proj")
         qkv, _ = self.qkv_proj(hidden_states)
-        print("after qkv_proj")
         
         q_size = self.q_size
         kv_size = self.kv_size
@@ -212,11 +210,8 @@ class Qwen2Attention(nnx.Module):
         v = qkv[..., q_size + kv_size:]
         
         q, k = self.rotary_emb(positions, q, k)
-        print("after rotary_emb")
         attn_output = self.attn(q, k, v)
-        print("after attn")
         output, _ = self.o_proj(attn_output)
-        print("after o_proj")
         return output
         
 
@@ -595,7 +590,6 @@ class Qwen2ForCausalLM(nnx.Module):
     def get_input_embeddings(self, input_ids: torch.Tensor) -> torch.Tensor:
         return self.model.get_input_embeddings(input_ids)
 
-    @jax.jit
     def forward(
         self,
         input_ids: torch.Tensor,
