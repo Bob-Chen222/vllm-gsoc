@@ -6,7 +6,7 @@ from typing import Any, Optional, Union
 import torch
 import torch.distributed
 
-from flax import nnx
+import flax.nnx as nnx
 import jax
 import jax.numpy as jnp
 

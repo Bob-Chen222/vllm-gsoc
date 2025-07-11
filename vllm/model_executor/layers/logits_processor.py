@@ -8,7 +8,7 @@ from typing import Optional
 import torch
 import torch.nn as nn
 
-from flax import nnx
+import flax.nnx as nnx
 import jax
 import jax.numpy as jnp
 

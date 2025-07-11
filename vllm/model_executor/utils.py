@@ -5,7 +5,7 @@ import copy
 from typing import Any, Optional
 
 import torch
-from flax import nnx
+import flax.nnx as nnx
 
 
 def set_random_seed(seed: int) -> None:

@@ -3,7 +3,7 @@ import numpy as np
 import torch
 import jax
 import jax.numpy as jnp
-from flax import nnx
+import flax.nnx as nnx
 
 from vllm.model_executor.layers.vocab_parallel_embedding import VocabParallelEmbedding as VocabParallelEmbeddingTorch
 from vllm.model_executor.layers.vocab_parallel_embedding_tpu import VocabParallelEmbedding as VocabParallelEmbeddingJAX

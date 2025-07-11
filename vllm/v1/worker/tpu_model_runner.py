@@ -11,7 +11,7 @@ import torch
 import torch.nn as nn
 import jax
 import jax.numpy as jnp
-from flax import nnx
+import flax.nnx as nnx
 from functools import partial
 # TPU XLA related
 import torch_xla.core.xla_model as xm

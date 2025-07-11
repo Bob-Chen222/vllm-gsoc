@@ -12,7 +12,7 @@ import torch
 from torch import nn
 from transformers.utils import SAFE_WEIGHTS_INDEX_NAME
 
-from flax import nnx
+import flax.nnx as nnx
 import jax
 import jax.numpy as jnp
 

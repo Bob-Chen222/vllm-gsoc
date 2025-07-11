@@ -2,7 +2,7 @@
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
 import torch.nn as nn
-from flax import nnx
+import flax.nnx as nnx
 import jax
 import jax.numpy as jnp
 

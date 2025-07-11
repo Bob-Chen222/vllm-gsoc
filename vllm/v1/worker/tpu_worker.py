@@ -13,7 +13,7 @@ import torch_xla.runtime as xr
 
 import jax
 import jax.numpy as jnp
-from flax import nnx
+import flax.nnx as nnx
 
 import vllm.envs as envs
 from vllm.config import ParallelConfig, VllmConfig

@@ -8,7 +8,7 @@ import torch
 # Required to register custom ops.
 import torch_xla.experimental.custom_kernel  # noqa: F401
 
-from flax import nnx
+import flax.nnx as nnx
 import jax
 import jax.numpy as jnp
 from functools import partial

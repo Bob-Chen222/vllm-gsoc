@@ -19,7 +19,7 @@ import huggingface_hub.constants
 import numpy as np
 import jax
 import jax.numpy as jnp
-from flax import nnx
+import flax.nnx as nnx
 import torch
 from huggingface_hub import HfFileSystem, hf_hub_download, snapshot_download
 from safetensors.torch import load_file, safe_open, save_file

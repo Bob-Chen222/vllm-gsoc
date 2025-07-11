@@ -13,7 +13,7 @@ import transformers
 from torch import nn
 from transformers.dynamic_module_utils import get_class_from_dynamic_module
 
-from flax import nnx
+import flax.nnx as nnx
 import jax
 from jax import numpy as jnp
 

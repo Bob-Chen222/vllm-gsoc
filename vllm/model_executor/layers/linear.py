@@ -9,7 +9,7 @@ import torch
 import torch.nn as nn
 from torch.nn.parameter import Parameter, UninitializedParameter
 
-from flax import nnx
+import flax.nnx as nnx
 import jax
 import jax.numpy as jnp
 

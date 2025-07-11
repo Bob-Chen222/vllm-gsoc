@@ -31,7 +31,7 @@ import torch
 # from torch import nn
 from transformers import Qwen2Config
 
-from flax import nnx
+import flax.nnx as nnx
 import jax
 import jax.numpy as jnp
 

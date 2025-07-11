@@ -9,7 +9,7 @@ import torch
 from torch import nn
 
 import jax
-from flax import nnx
+import flax.nnx as nnx
 import jax.numpy as jnp
 
 if TYPE_CHECKING:
