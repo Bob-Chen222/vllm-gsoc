@@ -441,14 +441,14 @@ class Qwen2Model(nnx.Module):
             assert intermediate_tensors is not None
             hidden_states = intermediate_tensors["hidden_states"]
             residual = intermediate_tensors["residual"]
-        i : int = 0
+        print("hidden embed: ", hidden_states)
         for layer in self.layers[self.start_layer:self.end_layer]:
             hidden_states, residual = layer(
                 positions,
                 hidden_states,
                 residual,
             )
-            i += 1
+        # print("hidden decoder: ", hidden_states)
         if not get_pp_group().is_last_rank:
             assert False, "Not implemented for jax"
             return IntermediateTensors({
@@ -456,6 +456,7 @@ class Qwen2Model(nnx.Module):
                 "residual": residual
             })
         hidden_states, _ = self.norm(hidden_states, residual)
+        # print("hidden norm: ", hidden_states)
         return hidden_states
 
     def load_weights(self, weights: Iterable[tuple[str,
