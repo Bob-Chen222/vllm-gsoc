@@ -825,6 +825,7 @@ class TPUModelRunner(LoRAModelRunnerMixin):
         intermediate_tensors: Optional[IntermediateTensors] = None,
     ) -> ModelRunnerOutput:
         # Update cached state
+        print("------------enter execute model-----------------")
         self._update_states(scheduler_output)
         if not scheduler_output.total_num_scheduled_tokens:
             # Return empty ModelRunnerOutput if there's no work to do.
@@ -842,6 +843,7 @@ class TPUModelRunner(LoRAModelRunnerMixin):
             scheduler_output)
         input_ids, inputs_embeds = self._get_model_inputs(
             self.input_ids, mm_embeds)
+        print("input_ids", input_ids)
         # xm.mark_step()
         num_reqs = self.input_batch.num_reqs
         # Run the decoder
@@ -854,6 +856,7 @@ class TPUModelRunner(LoRAModelRunnerMixin):
                 positions=self.position_ids,
                 inputs_embeds=inputs_embeds,
             )
+            print("hidden_states", hidden_states)
         
         # assert False, "still have error in forward"
         hidden_states = self.select_hidden_states(hidden_states,
@@ -869,6 +872,7 @@ class TPUModelRunner(LoRAModelRunnerMixin):
                                             arange)
         selected_token_ids = self.sample_from_logits_func(
             logits, tpu_sampling_metadata)
+        print("selected_token_ids", selected_token_ids)
         # NOTE (NickLucche) Use the original logits (before any penalties or
         # temperature scaling) for the top-k logprobs. We can't enforce it due
         # to recompilations outside torch.compiled code, so just make sure
@@ -952,6 +956,7 @@ class TPUModelRunner(LoRAModelRunnerMixin):
             prompt_logprobs_dict=prompt_logprobs_dict,
         )
 
+        print("------------exit execute model-----------------")
         # Check there are no new graphs compiled - all the graphs should be
         # captured and compiled during warm up.
         self._verify_num_xla_graphs("execute_model")
@@ -1008,7 +1013,6 @@ class TPUModelRunner(LoRAModelRunnerMixin):
         # xm.mark_step()
         # xm.wait_device_ops()
         if not hasattr(self, "model"):
-            print("assigned model!!")
             self.model = model
         self.sampler = TPUSampler()
 
