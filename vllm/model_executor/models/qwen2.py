@@ -612,7 +612,7 @@ class Qwen2ForCausalLM(nnx.Module):
                                    inputs_embeds)
         return hidden_states
 
-    @jax.jit
+    # @jax.jit
     def compute_logits(
         self,
         hidden_states: jax.Array,

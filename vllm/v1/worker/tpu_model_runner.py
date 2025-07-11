@@ -12,6 +12,7 @@ import torch.nn as nn
 import jax
 import jax.numpy as jnp
 from flax import nnx
+from functools import partial
 # TPU XLA related
 import torch_xla.core.xla_model as xm
 import torch_xla.distributed.spmd as xs
@@ -1459,7 +1460,7 @@ class TPUModelRunner(LoRAModelRunnerMixin):
     def select_hidden_states(self, hidden_states, indices_do_sample):
         return hidden_states[indices_do_sample]
 
-    # @torch.compile(backend="openxla", fullgraph=True, dynamic=False)
+    @partial(jax.jit, static_argnames=['self'])
     def compute_logits(self,
                        sample_hidden_states: jax.Array) -> jax.Array:
         print("sample_hidden_states.shape is", sample_hidden_states.shape)
