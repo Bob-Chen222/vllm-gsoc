@@ -1392,8 +1392,6 @@ class TPUModelRunner(LoRAModelRunnerMixin):
                 tensor_size = kv_cache_sizes[layer_name]
                 assert tensor_size % kv_cache_spec.page_size_bytes == 0
                 num_blocks = tensor_size // kv_cache_spec.page_size_bytes  # noqa
-                print("tensor_size is", tensor_size)
-                print("page_size_bytes is", kv_cache_spec.page_size_bytes)
                 if isinstance(kv_cache_spec, AttentionSpec):
                     if self.use_spmd:
                         num_kv_heads = kv_cache_spec.num_kv_heads
@@ -1413,7 +1411,6 @@ class TPUModelRunner(LoRAModelRunnerMixin):
                     #                            dtype=dtype).to(self.device)
                     if dtype != jnp.bfloat16:
                         assert False, "only hardcoded one datatype for jax"
-                    print("kv_cache_shape is", kv_cache_shape)
                     tpu_kv_cache = jnp.zeros(
                         kv_cache_shape,
                         dtype=jnp.bfloat16

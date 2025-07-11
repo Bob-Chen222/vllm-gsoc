@@ -313,9 +313,7 @@ class Qwen2DecoderLayer(nnx.Module):
         # Fully Connected
         hidden_states, residual = self.post_attention_layernorm(
             hidden_states, residual)
-        print("hidden_states after norm:", hidden_states.shape)
         hidden_states = self.mlp(hidden_states)
-        print("hidden_states after mlp:", hidden_states.shape)
         return hidden_states, residual
     
     
@@ -445,7 +443,6 @@ class Qwen2Model(nnx.Module):
             residual = intermediate_tensors["residual"]
         i : int = 0
         for layer in self.layers[self.start_layer:self.end_layer]:
-            print("layer:", i)
             hidden_states, residual = layer(
                 positions,
                 hidden_states,
