@@ -751,3 +751,24 @@ def fast_topk(values, topk, dim):
     else:
         # Use topk for efficiency with larger k values
         return torch.topk(values, topk, dim=dim)
+    
+
+
+def apply_name_forward(name_list: list[str], params_dict: nnx.State = None):
+    param : nnx.State = params_dict[name_list[0]]
+    if len(name_list) > 1:
+        for n in name_list[1:]:
+            key = int(n) if n.isdigit() else n
+            param = param[key]
+    return param
+
+def apply_name_backward(name_list: list[str], params_dict: nnx.State, param):
+    for n in name_list[:-1]:
+        key = int(n) if n.isdigit() else n
+        params_dict = params_dict[key]
+    last_key = name_list[-1]
+    if last_key.isdigit():
+        params_dict[int(last_key)] = param
+    else:
+        params_dict[last_key] = param
+

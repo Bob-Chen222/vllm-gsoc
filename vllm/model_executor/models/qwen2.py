@@ -58,7 +58,7 @@ from .interfaces import SupportsLoRA, SupportsPP
 from .utils import (AutoWeightsLoader, PPMissingLayer, extract_layer_index,
                     is_pp_missing_parameter,
                     make_empty_intermediate_tensors_factory, make_layers,
-                    maybe_prefix)
+                    maybe_prefix, apply_name_forward, apply_name_backward)
 
 
 class Qwen2MLP(nnx.Module):
@@ -514,6 +514,7 @@ class Qwen2Model(nnx.Module):
                     self.layers[layer_num].self_attn.qkv_proj.weight_loader(param, loaded_weight, shard_id)
                 else:
                     raise RuntimeError("never going to happen")
+                apply_name_backward(name_list, params_dict, param)
                 break
             else:
                 # Skip loading extra bias for GPTQ models.
@@ -526,16 +527,16 @@ class Qwen2Model(nnx.Module):
                     continue
                 # if is_pp_missing_parameter(name, self):
                 #     continue
-                param : nnx.State = params_dict[name_list[0]]
-                if len(name_list) > 1:
-                    for n in name_list[1:]:
-                        key = int(n) if n.isdigit() else n
-                        param = param[key]
+                param = apply_name_forward(name_list, params_dict=params_dict)
 
                 weight_loader = getattr(param, "weight_loader",
                                         default_weight_loader)
                 weight_loader(param, loaded_weight)
+                apply_name_backward(name_list, params_dict, param)
             loaded_params.add(name)
+        
+
+        nnx.update(self, params_dict)
         return loaded_params
 
 # NOTE (Bob): this is a hack for now, I just disabled lora and ppsupport from inherited by qwen
