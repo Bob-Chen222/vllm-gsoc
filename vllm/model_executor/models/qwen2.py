@@ -305,10 +305,12 @@ class Qwen2DecoderLayer(nnx.Module):
         else:
             hidden_states, residual = self.input_layernorm(
                 hidden_states, residual)
+        print("input layer norm: ", hidden_states)
         hidden_states = self.self_attn(
             positions=positions,
             hidden_states=hidden_states,
         )
+        print("hidden_states attn: ", hidden_states)
 
         # Fully Connected
         hidden_states, residual = self.post_attention_layernorm(
@@ -441,14 +443,12 @@ class Qwen2Model(nnx.Module):
             assert intermediate_tensors is not None
             hidden_states = intermediate_tensors["hidden_states"]
             residual = intermediate_tensors["residual"]
-        print("hidden embed: ", hidden_states)
         for layer in self.layers[self.start_layer:self.end_layer]:
             hidden_states, residual = layer(
                 positions,
                 hidden_states,
                 residual,
             )
-        print("hidden decoder: ", hidden_states)
         if not get_pp_group().is_last_rank:
             assert False, "Not implemented for jax"
             return IntermediateTensors({
