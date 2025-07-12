@@ -254,6 +254,15 @@ class PallasAttentionBackendImpl(AttentionImpl, nnx.Module):
             # Write input keys and values to the KV cache.
             # Skip this if sharing KV cache with an earlier attention layer.
             slot_mapping = attn_metadata.slot_mapping
+            _, _, num_combined_kv_heads, head_size = kv_cache.shape
+            num_kv_heads = num_combined_kv_heads // 2
+
+            key = jnp.reshape(key, (-1, num_kv_heads, head_size))
+            value = jnp.reshape(value, (-1, num_kv_heads, head_size))
+
+            kv = jnp.concatenate([key, value], axis=-1).reshape(-1, num_combined_kv_heads,
+                                                        head_size)
+            print("kv is ", kv)
             write_to_kv_cache(key, value, kv_cache, slot_mapping)
         
         # then do the attention
@@ -274,6 +283,11 @@ class PallasAttentionBackendImpl(AttentionImpl, nnx.Module):
             sliding_window=self.sliding_window,
             soft_cap=self.logits_soft_cap,
         )
+        # print("kv_cache", kv_cache.shape)
+        # print("attn_metadata.context_lens", attn_metadata.context_lens)
+        # print("attn_metadata.block_tables", attn_metadata.block_tables)
+        # print("attn_metadata.query_start_loc", attn_metadata.query_start_loc)
+        # print("attn_metadata.num_seqs", attn_metadata.num_seqs)
 
         return output.reshape(num_tokens, hidden_size)
 
