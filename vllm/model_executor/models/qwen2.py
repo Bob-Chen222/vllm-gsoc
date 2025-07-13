@@ -202,16 +202,29 @@ class Qwen2Attention(nnx.Module):
         hidden_states: jax.Array,
     ) -> jax.Array:
         qkv, _ = self.qkv_proj(hidden_states)
+        with open("../output_jax.txt", "a") as f:
+            print("hidden after qkv_proj: ", qkv, file=f)
         
         q_size = self.q_size
         kv_size = self.kv_size
         q = qkv[..., :q_size]
         k = qkv[..., q_size:q_size + kv_size]
         v = qkv[..., q_size + kv_size:]
+        with open("../output_jax.txt", "a") as f:
+            print("q: ", q, file=f)
+            print("k: ", k, file=f)
+            print("v: ", v, file=f)
         
         q, k = self.rotary_emb(positions, q, k)
+        with open("../output_jax.txt", "a") as f:
+            print("q after rotary_emb: ", q, file=f)
+            print("k after rotary_emb: ", k, file=f)
         attn_output = self.attn(q, k, v)
+        with open("../output_jax.txt", "a") as f:
+            print("attn_output: ", attn_output, file=f)
         output, _ = self.o_proj(attn_output)
+        with open("../output_jax.txt", "a") as f:
+            print("output after o_proj: ", output, file=f)
         return output
         
 
