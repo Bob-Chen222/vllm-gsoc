@@ -298,18 +298,22 @@ class Qwen2DecoderLayer(nnx.Module):
         hidden_states: jax.Array,
         residual: Optional[jax.Array],
     ) -> tuple[jax.Array, jax.Array]:
-        # Self Attention
+        with open("../output_jax.txt", "a") as f:
+            f.write(f"hidden_states input of decoder layer: {hidden_states}\n")
         if residual is None:
             residual = hidden_states
             hidden_states = self.input_layernorm(hidden_states)
         else:
             hidden_states, residual = self.input_layernorm(
                 hidden_states, residual)
+        with open("../output_jax.txt", "a") as f:
+            f.write(f"hidden_states input_layer norm: {hidden_states}\n")
         hidden_states = self.self_attn(
             positions=positions,
             hidden_states=hidden_states,
         )
-        print("hidden_states attn: ", hidden_states)
+        with open("../output_jax.txt", "a") as f:
+            f.write(f"hidden_states after self_attn: {hidden_states}\n")
 
         # Fully Connected
         hidden_states, residual = self.post_attention_layernorm(
@@ -442,12 +446,16 @@ class Qwen2Model(nnx.Module):
             assert intermediate_tensors is not None
             hidden_states = intermediate_tensors["hidden_states"]
             residual = intermediate_tensors["residual"]
+        num_layer = 0
         for layer in self.layers[self.start_layer:self.end_layer]:
+            num_layer += 1
             hidden_states, residual = layer(
                 positions,
                 hidden_states,
                 residual,
             )
+            if num_layer > 2:
+                assert False, "only debug the first two layers for now"
         if not get_pp_group().is_last_rank:
             assert False, "Not implemented for jax"
             return IntermediateTensors({

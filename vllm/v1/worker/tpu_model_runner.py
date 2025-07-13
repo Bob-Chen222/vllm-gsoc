@@ -825,7 +825,8 @@ class TPUModelRunner(LoRAModelRunnerMixin):
         intermediate_tensors: Optional[IntermediateTensors] = None,
     ) -> ModelRunnerOutput:
         # Update cached state
-        print("------------enter execute model-----------------")
+        with open("../output_jax.txt", "a") as f:
+            print("------------- execute_model -------------", file=f)
         self._update_states(scheduler_output)
         if not scheduler_output.total_num_scheduled_tokens:
             # Return empty ModelRunnerOutput if there's no work to do.
