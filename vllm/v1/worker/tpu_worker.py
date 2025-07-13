@@ -224,6 +224,8 @@ class TPUWorker:
         # tpu_kv_cache_bytes = max(usable_memory_size - profiled, 0)
         # NOTE(Bob): hardcoded!!!!!!!
         tpu_kv_cache_bytes = 27505662873
+        # let's try one third
+        tpu_kv_cache_bytes //= 3
 
         return int(tpu_kv_cache_bytes)
 

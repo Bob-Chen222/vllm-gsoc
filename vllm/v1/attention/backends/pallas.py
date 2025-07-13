@@ -228,7 +228,45 @@ class PallasAttentionBackendImpl(AttentionImpl, nnx.Module):
         attn_metadata: PallasMetadata,
         output: Optional[jax.Array] = None,
     ) -> jax.Array:
-        """Forward pass with Pallas attention.
+        assert output is None, "Output should be None for Pallas backend in jax"
+        assert layer._k_scale_float == 1.0 and layer._v_scale_float == 1.0
+        output = kernel_wrapper(
+            self.num_heads,
+            self.head_size,
+            self.scale,
+            self.sliding_window,
+            self.logits_soft_cap,
+            query,
+            key,
+            value,
+            kv_cache,
+            attn_metadata.slot_mapping,
+            attn_metadata.context_lens,
+            attn_metadata.block_tables,
+            attn_metadata.query_start_loc,
+            attn_metadata.num_seqs,
+        )
+        return output
+
+def kernel_wrapper(
+        num_heads: int,
+        head_size: int,
+        sm_scale: float,
+        sliding_window: Optional[int],
+        logits_soft_cap: Optional[float],
+        query: jax.Array,
+        key: jax.Array,
+        value: jax.Array,
+        kv_cache: Tuple[jax.Array, jax.Array],
+        slot_mapping: jax.Array,
+        context_lens: jax.Array,
+        block_tables: jax.Array,
+        query_start_loc: jax.Array,
+        num_seqs: jax.Array,
+        kv_sharing_target_layer_name: Optional[str] = None,
+):
+    
+    """Forward pass with Pallas attention.
 
         Args:
             query: shape = [num_tokens, num_heads * head_size]
@@ -240,56 +278,48 @@ class PallasAttentionBackendImpl(AttentionImpl, nnx.Module):
             shape = [num_tokens, num_heads * head_size]
         """
         # For determine_available_memory case.
-        if jnp.size(kv_cache[0]) == 0:
-            if output is None:
-                output = jnp.ones_like(query)
-            return output
+    if jnp.size(kv_cache[0]) == 0:
+        if output is None:
+            output = jnp.ones_like(query)
+        return output
 
-        assert layer._k_scale_float == 1.0 and layer._v_scale_float == 1.0
-        num_tokens, hidden_size = query.shape
-        query = jnp.reshape(query, (num_tokens, self.num_heads, self.head_size))
+    num_tokens, hidden_size = query.shape
+    query = jnp.reshape(query, (num_tokens, num_heads, head_size))
 
-        # NOTE(Bob): because of the fact that we are currently using the attention_jax, it helps to manage the kvcache
-        if self.kv_sharing_target_layer_name is None and jnp.size(kv_cache[0]) > 0:
-            # Write input keys and values to the KV cache.
-            # Skip this if sharing KV cache with an earlier attention layer.
-            slot_mapping = attn_metadata.slot_mapping
-            _, _, num_combined_kv_heads, head_size = kv_cache.shape
-            num_kv_heads = num_combined_kv_heads // 2
-
-            key = jnp.reshape(key, (-1, num_kv_heads, head_size))
-            value = jnp.reshape(value, (-1, num_kv_heads, head_size))
-
-            kv = jnp.concatenate([key, value], axis=-1).reshape(-1, num_combined_kv_heads,
-                                                        head_size)
-            print("kv is ", kv)
-            write_to_kv_cache(key, value, kv_cache, slot_mapping)
-        
-        # then do the attention
-        output = ragged_paged_attention(
-            query,
-            kv_cache,
-            attn_metadata.context_lens,
-            attn_metadata.block_tables,
-            attn_metadata.query_start_loc,
-            attn_metadata.num_seqs,
-            # By default, the system utilizes optimized block size and
-            # vmem_limit_bytes parameters from the kernel repository. However,
-            # these can be manually adjusted for debugging if necessary.
-            num_kv_pages_per_block=None,
-            num_queries_per_block=None,
-            vmem_limit_bytes=None,
-            sm_scale=self.scale,
-            sliding_window=self.sliding_window,
-            soft_cap=self.logits_soft_cap,
+    # NOTE(Bob): because of the fact that we are currently using the attention_jax, it helps to manage the kvcache
+    if jnp.size(kv_cache[0]) > 0:
+        assert kv_sharing_target_layer_name is None
+        # Write input keys and values to the KV cache.
+        # Skip this if sharing KV cache with an earlier attention layer.
+        kv_cache = write_to_kv_cache(
+            key, value, kv_cache, slot_mapping
         )
-        # print("kv_cache", kv_cache.shape)
-        # print("attn_metadata.context_lens", attn_metadata.context_lens)
-        # print("attn_metadata.block_tables", attn_metadata.block_tables)
-        # print("attn_metadata.query_start_loc", attn_metadata.query_start_loc)
-        # print("attn_metadata.num_seqs", attn_metadata.num_seqs)
+    
+    # then do the attention
+    output = ragged_paged_attention(
+        query,
+        kv_cache,
+        context_lens,
+        block_tables,
+        query_start_loc,
+        num_seqs,
+        # By default, the system utilizes optimized block size and
+        # vmem_limit_bytes parameters from the kernel repository. However,
+        # these can be manually adjusted for debugging if necessary.
+        num_kv_pages_per_block=None,
+        num_queries_per_block=None,
+        vmem_limit_bytes=None,
+        sm_scale=sm_scale,
+        sliding_window=sliding_window,
+        soft_cap= logits_soft_cap,
+    )
+    # print("kv_cache", kv_cache.shape)
+    # print("attn_metadata.context_lens", attn_metadata.context_lens)
+    # print("attn_metadata.block_tables", attn_metadata.block_tables)
+    # print("attn_metadata.query_start_loc", attn_metadata.query_start_loc)
+    # print("attn_metadata.num_seqs", attn_metadata.num_seqs)
 
-        return output.reshape(num_tokens, hidden_size)
+    return output.reshape(num_tokens, hidden_size)
 
 @partial(jax.jit, donate_argnums=(2,))
 def write_to_kv_cache(
@@ -297,7 +327,7 @@ def write_to_kv_cache(
     value: jax.Array,
     kv_cache: jax.Array,
     slot_mapping: jax.Array,
-) -> None:
+) -> jax.Array:
     """ Write the key and values to the KV cache.
 
     Args:
@@ -306,6 +336,7 @@ def write_to_kv_cache(
         kv_cache = [num_blocks, block_size, num_kv_heads * 2, head_size]
 
     """
+    print("kv_cache shape is:", kv_cache.shape)
     _, _, num_combined_kv_heads, head_size = kv_cache.shape
     num_kv_heads = num_combined_kv_heads // 2
 
@@ -318,5 +349,9 @@ def write_to_kv_cache(
     # torch.ops.xla.dynamo_set_buffer_donor_(kv_cache, True)
 
     # NOTE(Bob): need to check if this is correct
-    kv_cache = kv_cache.reshape((-1,) + kv_cache.shape[2:])
-    kv_cache = kv_cache.at[slot_mapping].set(kv)
+    original_shape = kv_cache.shape
+    kv_cache_flat = kv_cache.reshape((-1,) + kv_cache.shape[2:])
+    updated_kv_cache_flat = kv_cache_flat.at[slot_mapping].set(kv)
+    
+    # Reshape back to original shape and return
+    return updated_kv_cache_flat.reshape(original_shape)

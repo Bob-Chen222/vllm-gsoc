@@ -1376,9 +1376,6 @@ class TPUModelRunner(LoRAModelRunnerMixin):
                 ],
             )
         # Verify dtype compatibility between block_table_cpu and input_batch
-        print("self.block_table_cpu.dtype is", self.block_table_cpu.dtype)
-        print("self.input_batch.block_table[0].get_cpu_tensor().dtype is", self.input_batch.block_table[0
-            ].get_cpu_tensor().dtype)
         assert self.block_table_cpu.dtype == self.input_batch.block_table[
             0].get_cpu_tensor().dtype
 
