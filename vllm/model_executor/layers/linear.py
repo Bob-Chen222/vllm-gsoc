@@ -204,7 +204,11 @@ class UnquantizedLinearMethod(LinearMethodBase):
               layer: nnx.Module,
               x: jax.Array,
               bias: Optional[jax.Array] = None) -> jax.Array:
-        res = x @ layer.weight.value.T + (bias if bias is not None else 0)
+        with open("../output_jax.txt", "a") as f:
+            print("x is", x, file=f)
+            print("weight is", layer.weight.value, file=f)
+            print("bias is", bias.value, file=f)
+        res = x @ layer.weight.value.T + (bias.value if bias is not None else 0)
         return res
 
 class LinearBase(nnx.Module):
