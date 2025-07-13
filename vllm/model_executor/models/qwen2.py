@@ -492,6 +492,7 @@ class Qwen2Model(nnx.Module):
             ("gate_up_proj", "up_proj", 1),
         ]
         params_dict = nnx.state(self)
+        print("params_dict: ", params_dict)
         loaded_params: set[str] = set()
         for name, loaded_weight in weights:
             if "rotary_emb.inv_freq" in name:
@@ -514,8 +515,8 @@ class Qwen2Model(nnx.Module):
                 name = name.replace(weight_name, param_name)
                 name_list = name.split(".")[1:-1]
                 # Skip loading extra bias for GPTQ models.
-                if name.endswith(".bias") and name not in params_dict:
-                    continue
+                # if name.endswith(".bias") and name not in params_dict:
+                #     continue
                 # if is_pp_missing_parameter(name, self):
                 #     continue
 
@@ -533,8 +534,12 @@ class Qwen2Model(nnx.Module):
                 # NOTE(Bob): let's just get a hack for the weightloader
                 if "gate" in name:
                     self.layers[layer_num].mlp.gate_up_proj.weight_loader(param, loaded_weight, shard_id)
-                elif "qkv_proj" in name:
-                    self.layers[layer_num].self_attn.qkv_proj.weight_loader(param, loaded_weight, shard_id)
+                elif "qkv_proj" in name and "bias" not in name:
+                    self.layers[layer_num].self_attn.qkv_proj.weight_loader(param, loaded_weight, shard_id, 'weight')
+                elif "qkv_proj" in name and "bias" in name:
+                    print("param: ", param)
+                    print("param shape: ", param['bias'].value.shape)
+                    self.layers[layer_num].self_attn.qkv_proj.weight_loader(param, loaded_weight, shard_id, 'bias')
                 else:
                     raise RuntimeError("never going to happen")
                 apply_name_backward(name_list, params_dict, param)
