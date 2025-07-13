@@ -305,7 +305,6 @@ class Qwen2DecoderLayer(nnx.Module):
         else:
             hidden_states, residual = self.input_layernorm(
                 hidden_states, residual)
-        print("input layer norm: ", hidden_states)
         hidden_states = self.self_attn(
             positions=positions,
             hidden_states=hidden_states,

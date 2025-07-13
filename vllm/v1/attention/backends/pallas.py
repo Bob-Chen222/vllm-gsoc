@@ -278,7 +278,7 @@ def kernel_wrapper(
             shape = [num_tokens, num_heads * head_size]
         """
         # For determine_available_memory case.
-    if jnp.size(kv_cache[0]) == 0:
+    if jnp.size(kv_cache.value[0]) == 0:
         if output is None:
             output = jnp.ones_like(query)
         return output
@@ -287,18 +287,18 @@ def kernel_wrapper(
     query = jnp.reshape(query, (num_tokens, num_heads, head_size))
 
     # NOTE(Bob): because of the fact that we are currently using the attention_jax, it helps to manage the kvcache
-    if jnp.size(kv_cache[0]) > 0:
+    if jnp.size(kv_cache.value[0]) > 0:
         assert kv_sharing_target_layer_name is None
         # Write input keys and values to the KV cache.
         # Skip this if sharing KV cache with an earlier attention layer.
-        kv_cache = write_to_kv_cache(
-            key, value, kv_cache, slot_mapping
+        kv_cache.value = write_to_kv_cache(
+            key, value, kv_cache.value, slot_mapping
         )
     
     # then do the attention
     output = ragged_paged_attention(
         query,
-        kv_cache,
+        kv_cache.value,
         context_lens,
         block_tables,
         query_start_loc,
@@ -313,11 +313,6 @@ def kernel_wrapper(
         sliding_window=sliding_window,
         soft_cap= logits_soft_cap,
     )
-    # print("kv_cache", kv_cache.shape)
-    # print("attn_metadata.context_lens", attn_metadata.context_lens)
-    # print("attn_metadata.block_tables", attn_metadata.block_tables)
-    # print("attn_metadata.query_start_loc", attn_metadata.query_start_loc)
-    # print("attn_metadata.num_seqs", attn_metadata.num_seqs)
 
     return output.reshape(num_tokens, hidden_size)
 
@@ -336,7 +331,6 @@ def write_to_kv_cache(
         kv_cache = [num_blocks, block_size, num_kv_heads * 2, head_size]
 
     """
-    print("kv_cache shape is:", kv_cache.shape)
     _, _, num_combined_kv_heads, head_size = kv_cache.shape
     num_kv_heads = num_combined_kv_heads // 2
 

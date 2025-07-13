@@ -328,7 +328,9 @@ class Attention(nnx.Module):
                 attn_metadata = forward_context.attn_metadata
                 if isinstance(attn_metadata, dict):
                     attn_metadata = attn_metadata[self.layer_name]
-                self_kv_cache = self.kv_cache[forward_context.virtual_engine]
+                assert forward_context.virtual_engine == 0, \
+                    "Virtual engine should be 0 for direct call in jax"
+                self_kv_cache = self.kv_cache[0]
                 return self.impl(self, query, key, value,
                                          self_kv_cache, attn_metadata)
             else:
