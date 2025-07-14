@@ -34,6 +34,7 @@ from transformers import Qwen2Config
 import flax.nnx as nnx
 import jax
 import jax.numpy as jnp
+from functools import partial
 
 from vllm.attention import Attention, AttentionType
 from vllm.compilation.decorators import support_torch_compile
@@ -423,7 +424,7 @@ class Qwen2Model(nnx.Module):
         hidden_states, _ = self.norm(hidden_states, residual)
         return hidden_states
     
-    @jax.jit
+    partial(jax.jit, static_argnames=("self"))
     def __call__(
         self,
         input_ids: jax.Array,
