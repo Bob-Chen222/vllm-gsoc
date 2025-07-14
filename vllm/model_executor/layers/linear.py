@@ -204,10 +204,6 @@ class UnquantizedLinearMethod(LinearMethodBase):
               layer: nnx.Module,
               x: jax.Array,
               bias: Optional[jax.Array] = None) -> jax.Array:
-        with open("../output_jax.txt", "a") as f:
-            print("x is", x, file=f)
-            print("weight is", layer.weight.value, file=f)
-            print("bias is", bias.value, file=f)
         res = x @ layer.weight.value.T + (bias.value if bias is not None else 0)
         return res
 
@@ -985,7 +981,8 @@ class QKVParallelLinear(ColumnParallelLinear):
     def weight_loader(self,
                       param: nnx.State,
                       loaded_weight: jax.Array,
-                      loaded_shard_id: Optional[str] = None):
+                      loaded_shard_id: Optional[str] = None,
+                      suffix: Optional[str] = None):
 
         # Special case for GGUF
         # initialize GGUF param after we know the quantize type
@@ -1021,7 +1018,7 @@ class QKVParallelLinear(ColumnParallelLinear):
                 param.data_container.append(loaded_weight)
                 return
 
-        param_data = param['weight'].value
+        param_data = param[suffix].value
         output_dim = getattr(param, "output_dim", 0)
         # Special case for AQLM codebooks.
         is_metadata = getattr(param, "is_metadata", False)
@@ -1142,7 +1139,7 @@ class QKVParallelLinear(ColumnParallelLinear):
             # NOTE (Bob): This is a hack for now
             # param_data = param_data.narrow(output_dim, shard_offset,
             #                                shard_size)
-            param_data = param['weight'].value
+            param_data = param[suffix].value
             
             if loaded_shard_id == "q":
                 shard_id = tp_rank
@@ -1178,7 +1175,13 @@ class QKVParallelLinear(ColumnParallelLinear):
 
         # assert param_data.shape == loaded_weight.shape
         loaded_weight = loaded_weight.astype(jnp.float32)
-        param['weight'].value = jax.lax.dynamic_update_slice(param['weight'].value, loaded_weight, (shard_offset,0))
+        print("value", param[suffix].value)
+        print("loaded weight shape", loaded_weight.shape)
+        print("shard offset", shard_offset)
+        if suffix is 'bias':
+            param[suffix].value = jax.lax.dynamic_update_slice(param[suffix].value, loaded_weight, (shard_offset,))
+        elif suffix is 'weight':
+            param[suffix].value = jax.lax.dynamic_update_slice(param[suffix].value, loaded_weight, (shard_offset,0))
 
 
 class RowParallelLinear(LinearBase):

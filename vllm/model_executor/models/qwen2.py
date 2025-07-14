@@ -470,8 +470,6 @@ class Qwen2Model(nnx.Module):
                 hidden_states,
                 residual,
             )
-            if num_layer > 2:
-                assert False, "only debug the first two layers for now"
         if not get_pp_group().is_last_rank:
             assert False, "Not implemented for jax"
             return IntermediateTensors({
@@ -493,6 +491,7 @@ class Qwen2Model(nnx.Module):
             ("gate_up_proj", "up_proj", 1),
         ]
         params_dict = nnx.state(self)
+        print("params_dict: ", params_dict)
         loaded_params: set[str] = set()
         for name, loaded_weight in weights:
             if "rotary_emb.inv_freq" in name:
@@ -515,8 +514,8 @@ class Qwen2Model(nnx.Module):
                 name = name.replace(weight_name, param_name)
                 name_list = name.split(".")[1:-1]
                 # Skip loading extra bias for GPTQ models.
-                if name.endswith(".bias") and name not in params_dict:
-                    continue
+                # if name.endswith(".bias") and name not in params_dict:
+                #     continue
                 # if is_pp_missing_parameter(name, self):
                 #     continue
 
@@ -534,8 +533,11 @@ class Qwen2Model(nnx.Module):
                 # NOTE(Bob): let's just get a hack for the weightloader
                 if "gate" in name:
                     self.layers[layer_num].mlp.gate_up_proj.weight_loader(param, loaded_weight, shard_id)
-                elif "qkv_proj" in name:
-                    self.layers[layer_num].self_attn.qkv_proj.weight_loader(param, loaded_weight, shard_id)
+                elif "qkv_proj" in name and "bias" not in name:
+                    self.layers[layer_num].self_attn.qkv_proj.weight_loader(param, loaded_weight, shard_id, 'weight')
+                elif "qkv_proj" in name and "bias" in name:
+                    self.layers[layer_num].self_attn.qkv_proj.weight_loader(param, loaded_weight, shard_id, 'bias')
+                    assert param is not None, "bias should not be None"
                 else:
                     raise RuntimeError("never going to happen")
                 apply_name_backward(name_list, params_dict, param)
