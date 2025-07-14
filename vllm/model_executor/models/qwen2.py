@@ -201,32 +201,17 @@ class Qwen2Attention(nnx.Module):
         positions: jax.Array,
         hidden_states: jax.Array,
     ) -> jax.Array:
-        with open("../output_jax.txt", "a") as f:
-            print("hidden_states input of qwen2attention: ", hidden_states, file=f)
         qkv, _ = self.qkv_proj(hidden_states)
-        with open("../output_jax.txt", "a") as f:
-            print("hidden after qkv_proj: ", qkv, file=f)
         
         q_size = self.q_size
         kv_size = self.kv_size
         q = qkv[..., :q_size]
         k = qkv[..., q_size:q_size + kv_size]
         v = qkv[..., q_size + kv_size:]
-        with open("../output_jax.txt", "a") as f:
-            print("q after split: ", q, file=f)
-            print("k after split: ", k, file=f)
-            print("v after split: ", v, file=f)
         
         q, k = self.rotary_emb(positions, q, k)
-        with open("../output_jax.txt", "a") as f:
-            print("q after rotary_emb: ", q, file=f)
-            print("k after rotary_emb: ", k, file=f)
         attn_output = self.attn(q, k, v)
-        with open("../output_jax.txt", "a") as f:
-            print("attn_output: ", attn_output, file=f)
         output, _ = self.o_proj(attn_output)
-        with open("../output_jax.txt", "a") as f:
-            print("output after o_proj: ", output, file=f)
         return output
         
 
@@ -313,22 +298,16 @@ class Qwen2DecoderLayer(nnx.Module):
         hidden_states: jax.Array,
         residual: Optional[jax.Array],
     ) -> tuple[jax.Array, jax.Array]:
-        with open("../output_jax.txt", "a") as f:
-            f.write(f"hidden_states input of decoder layer: {hidden_states}\n")
         if residual is None:
             residual = hidden_states
             hidden_states = self.input_layernorm(hidden_states)
         else:
             hidden_states, residual = self.input_layernorm(
                 hidden_states, residual)
-        with open("../output_jax.txt", "a") as f:
-            f.write(f"hidden_states input_layer norm: {hidden_states}\n")
         hidden_states = self.self_attn(
             positions=positions,
             hidden_states=hidden_states,
         )
-        with open("../output_jax.txt", "a") as f:
-            f.write(f"hidden_states after self_attn: {hidden_states}\n")
 
         # Fully Connected
         hidden_states, residual = self.post_attention_layernorm(
