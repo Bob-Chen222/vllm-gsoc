@@ -475,7 +475,6 @@ class Qwen2Model(nnx.Module):
             ("gate_up_proj", "up_proj", 1),
         ]
         params_dict = nnx.state(self)
-        print("params_dict: ", params_dict)
         loaded_params: set[str] = set()
         for name, loaded_weight in weights:
             if "rotary_emb.inv_freq" in name:
