@@ -217,7 +217,7 @@ class TPUWorker:
                                  self.cache_config.gpu_memory_utilization)
         tpu_kv_cache_bytes = max(usable_memory_size - profiled, 0)
 
-        return int(tpu_kv_cache_bytes)
+        return int(tpu_kv_cache_bytes) // 2
 
     def execute_model(
         self,
