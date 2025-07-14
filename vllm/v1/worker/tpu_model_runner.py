@@ -604,7 +604,6 @@ class TPUModelRunner(LoRAModelRunnerMixin):
         query_start_loc = jax.device_put(self.query_start_loc_cpu[:self.max_num_reqs + 1], 
                                          jax.devices()[0])
         seq_lens = jax.device_put(self.seq_lens_cpu[:self.max_num_reqs], jax.devices()[0])
-        print("seq_lens", seq_lens)
 
         if self.lora_config is not None:
             assert False, "not supported in jax"

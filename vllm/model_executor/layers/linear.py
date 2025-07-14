@@ -1175,9 +1175,6 @@ class QKVParallelLinear(ColumnParallelLinear):
 
         # assert param_data.shape == loaded_weight.shape
         loaded_weight = loaded_weight.astype(jnp.float32)
-        print("value", param[suffix].value)
-        print("loaded weight shape", loaded_weight.shape)
-        print("shard offset", shard_offset)
         if suffix is 'bias':
             param[suffix].value = jax.lax.dynamic_update_slice(param[suffix].value, loaded_weight, (shard_offset,))
         elif suffix is 'weight':
