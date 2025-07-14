@@ -204,10 +204,6 @@ class UnquantizedLinearMethod(LinearMethodBase):
               layer: nnx.Module,
               x: jax.Array,
               bias: Optional[jax.Array] = None) -> jax.Array:
-        with open("../output_jax.txt", "a") as f:
-            print("x is", x, file=f)
-            print("weight is", layer.weight.value, file=f)
-            print("bias is", bias.value, file=f)
         res = x @ layer.weight.value.T + (bias.value if bias is not None else 0)
         return res
 
@@ -1179,7 +1175,13 @@ class QKVParallelLinear(ColumnParallelLinear):
 
         # assert param_data.shape == loaded_weight.shape
         loaded_weight = loaded_weight.astype(jnp.float32)
-        param[suffix].value = jax.lax.dynamic_update_slice(param[suffix].value, loaded_weight, (shard_offset,0))
+        print("value", param[suffix].value)
+        print("loaded weight shape", loaded_weight.shape)
+        print("shard offset", shard_offset)
+        if suffix is 'bias':
+            param[suffix].value = jax.lax.dynamic_update_slice(param[suffix].value, loaded_weight, (shard_offset,))
+        elif suffix is 'weight':
+            param[suffix].value = jax.lax.dynamic_update_slice(param[suffix].value, loaded_weight, (shard_offset,0))
 
 
 class RowParallelLinear(LinearBase):

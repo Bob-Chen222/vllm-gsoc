@@ -469,8 +469,6 @@ class Qwen2Model(nnx.Module):
                 hidden_states,
                 residual,
             )
-            if num_layer > 2:
-                assert False, "only debug the first two layers for now"
         if not get_pp_group().is_last_rank:
             assert False, "Not implemented for jax"
             return IntermediateTensors({
@@ -537,9 +535,8 @@ class Qwen2Model(nnx.Module):
                 elif "qkv_proj" in name and "bias" not in name:
                     self.layers[layer_num].self_attn.qkv_proj.weight_loader(param, loaded_weight, shard_id, 'weight')
                 elif "qkv_proj" in name and "bias" in name:
-                    print("param: ", param)
-                    print("param shape: ", param['bias'].value.shape)
                     self.layers[layer_num].self_attn.qkv_proj.weight_loader(param, loaded_weight, shard_id, 'bias')
+                    assert param is not None, "bias should not be None"
                 else:
                     raise RuntimeError("never going to happen")
                 apply_name_backward(name_list, params_dict, param)
