@@ -444,6 +444,7 @@ class Qwen2Model(nnx.Module):
         hidden_states, _ = self.norm(hidden_states, residual)
         return hidden_states
     
+    @jax.jit
     def __call__(
         self,
         input_ids: jax.Array,
