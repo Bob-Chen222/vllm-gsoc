@@ -424,38 +424,20 @@ class Qwen2Model(nnx.Module):
         hidden_states, _ = self.norm(hidden_states, residual)
         return hidden_states
     
-    partial(jax.jit, static_argnames=("self"))
+    @nnx.jit
     def __call__(
         self,
         input_ids: jax.Array,
         positions: jax.Array,
-        intermediate_tensors: Optional[IntermediateTensors] = None,
-        inputs_embeds: Optional[jax.Array] = None,
-    ) -> Union[jax.Array, IntermediateTensors]:
-        if get_pp_group().is_first_rank:
-            if inputs_embeds is not None:
-                hidden_states = inputs_embeds
-            else:
-                hidden_states = self.get_input_embeddings(input_ids)
-            residual = None
-        else:
-            assert intermediate_tensors is not None
-            hidden_states = intermediate_tensors["hidden_states"]
-            residual = intermediate_tensors["residual"]
-        num_layer = 0
+    ) -> jax.Array:
+        hidden_states = self.get_input_embeddings(input_ids)
+        residual = None
         for layer in self.layers[self.start_layer:self.end_layer]:
-            num_layer += 1
             hidden_states, residual = layer(
                 positions,
                 hidden_states,
                 residual,
             )
-        if not get_pp_group().is_last_rank:
-            assert False, "Not implemented for jax"
-            return IntermediateTensors({
-                "hidden_states": hidden_states,
-                "residual": residual
-            })
         hidden_states, _ = self.norm(hidden_states, residual)
         return hidden_states
 
@@ -610,8 +592,8 @@ class Qwen2ForCausalLM(nnx.Module):
         intermediate_tensors: Optional[IntermediateTensors] = None,
         inputs_embeds: Optional[jax.Array] = None,
     ) -> Union[jax.Array, IntermediateTensors]:
-        hidden_states = self.model(input_ids, positions, intermediate_tensors,
-                                   inputs_embeds)
+        print("input_ids", input_ids.shape)
+        hidden_states = self.model(input_ids, positions)
         return hidden_states
 
     # @jax.jit

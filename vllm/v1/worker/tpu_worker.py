@@ -225,7 +225,7 @@ class TPUWorker:
         # NOTE(Bob): hardcoded!!!!!!!
         tpu_kv_cache_bytes = 27505662873
         # let's try one third
-        tpu_kv_cache_bytes //= 2
+        tpu_kv_cache_bytes //= 4
 
         return int(tpu_kv_cache_bytes)
 
