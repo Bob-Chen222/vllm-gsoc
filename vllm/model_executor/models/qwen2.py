@@ -390,7 +390,6 @@ class Qwen2Model(nnx.Module):
             assert False, "Not implemented for jax"
             self.norm = PPMissingLayer()
 
-    @nnx.jit
     def get_input_embeddings(self, input_ids: jax.Array) -> jax.Array:
         return self.embed_tokens(input_ids)
 
@@ -401,6 +400,7 @@ class Qwen2Model(nnx.Module):
         intermediate_tensors: Optional[IntermediateTensors] = None,
         inputs_embeds: Optional[torch.Tensor] = None,
     ) -> Union[torch.Tensor, IntermediateTensors]:
+        assert False, "Not implemented for jax"
         if get_pp_group().is_first_rank:
             if inputs_embeds is not None:
                 hidden_states = inputs_embeds
@@ -430,6 +430,7 @@ class Qwen2Model(nnx.Module):
         input_ids: jax.Array,
         positions: jax.Array,
     ) -> jax.Array:
+        # NOTE (Bob): this is a hack for now, I just disabled lora and ppsupport and everything is simpilfied
         hidden_states = self.get_input_embeddings(input_ids)
         residual = None
         for layer in self.layers[self.start_layer:self.end_layer]:

@@ -443,6 +443,7 @@ class VocabParallelEmbedding(nnx.Module):
     def __call__(self, input_):
         # NOTE: (Bob): this function now only supports sequential inference
         # NOTE: (Bob): and also not using long
+        # NOTE: (Bob): this is a temporary solution, we should fix it later
         output_parallel = self.weight.value[input_]
         return output_parallel
 

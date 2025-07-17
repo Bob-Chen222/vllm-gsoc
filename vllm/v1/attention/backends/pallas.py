@@ -316,7 +316,7 @@ def kernel_wrapper(
 
     return output.reshape(num_tokens, hidden_size)
 
-@partial(jax.jit, donate_argnums=(2,))
+@partial(nnx.jit, donate_argnums=(2,))
 def write_to_kv_cache(
     key: jax.Array,
     value: jax.Array,
