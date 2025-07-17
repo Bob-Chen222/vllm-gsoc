@@ -390,7 +390,8 @@ class Qwen2Model(nnx.Module):
             assert False, "Not implemented for jax"
             self.norm = PPMissingLayer()
 
-    def get_input_embeddings(self, input_ids: torch.Tensor) -> torch.Tensor:
+    @nnx.jit
+    def get_input_embeddings(self, input_ids: jax.Array) -> jax.Array:
         return self.embed_tokens(input_ids)
 
     def forward(
@@ -424,7 +425,6 @@ class Qwen2Model(nnx.Module):
         hidden_states, _ = self.norm(hidden_states, residual)
         return hidden_states
     
-    @nnx.jit
     def __call__(
         self,
         input_ids: jax.Array,
