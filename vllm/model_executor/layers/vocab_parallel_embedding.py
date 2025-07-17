@@ -48,8 +48,6 @@ class UnquantizedEmbeddingMethod(QuantizeMethodBase):
           layer: nnx.Module,
           x: jax.Array,
           bias: Optional[jax.Array] = None) -> jax.Array:
-        jax.debug.print("x = {}", x)
-        print("weight is", layer.weight.value)
         out = jnp.dot(x, layer.weight.T)  # transpose if weights are (out_dim, in_dim)
         if bias is not None:
             out += bias

@@ -604,7 +604,6 @@ class TPUModelRunner(LoRAModelRunnerMixin):
         query_start_loc = jax.device_put(self.query_start_loc_cpu[:self.max_num_reqs + 1], 
                                          jax.devices()[0])
         seq_lens = jax.device_put(self.seq_lens_cpu[:self.max_num_reqs], jax.devices()[0])
-        print("seq_lens", seq_lens)
 
         if self.lora_config is not None:
             assert False, "not supported in jax"
@@ -844,7 +843,6 @@ class TPUModelRunner(LoRAModelRunnerMixin):
             scheduler_output)
         input_ids, inputs_embeds = self._get_model_inputs(
             self.input_ids, mm_embeds)
-        print("input_ids", input_ids)
         # xm.mark_step()
         num_reqs = self.input_batch.num_reqs
         # Run the decoder
@@ -857,7 +855,6 @@ class TPUModelRunner(LoRAModelRunnerMixin):
                 positions=self.position_ids,
                 inputs_embeds=inputs_embeds,
             )
-            print("hidden_states", hidden_states)
         
         # assert False, "still have error in forward"
         hidden_states = self.select_hidden_states(hidden_states,
@@ -873,7 +870,6 @@ class TPUModelRunner(LoRAModelRunnerMixin):
                                             arange)
         selected_token_ids = self.sample_from_logits_func(
             logits, tpu_sampling_metadata)
-        print("selected_token_ids", selected_token_ids)
         # NOTE (NickLucche) Use the original logits (before any penalties or
         # temperature scaling) for the top-k logprobs. We can't enforce it due
         # to recompilations outside torch.compiled code, so just make sure
@@ -957,7 +953,6 @@ class TPUModelRunner(LoRAModelRunnerMixin):
             prompt_logprobs_dict=prompt_logprobs_dict,
         )
 
-        print("------------exit execute model-----------------")
         # Check there are no new graphs compiled - all the graphs should be
         # captured and compiled during warm up.
         self._verify_num_xla_graphs("execute_model")
@@ -1462,7 +1457,6 @@ class TPUModelRunner(LoRAModelRunnerMixin):
     @partial(jax.jit, static_argnames=['self'])
     def compute_logits(self,
                        sample_hidden_states: jax.Array) -> jax.Array:
-        print("sample_hidden_states.shape is", sample_hidden_states.shape)
         return self.model.compute_logits(sample_hidden_states, None)
 
     # TODO: Under SPMD mode, sample_from_logits has correctness issue.
