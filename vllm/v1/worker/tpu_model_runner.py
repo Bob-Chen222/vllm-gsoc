@@ -824,8 +824,7 @@ class TPUModelRunner(LoRAModelRunnerMixin):
         intermediate_tensors: Optional[IntermediateTensors] = None,
     ) -> ModelRunnerOutput:
         # Update cached state
-        with open("../output_jax.txt", "a") as f:
-            print("------------- execute_model -------------", file=f)
+        time_start = time.time()
         self._update_states(scheduler_output)
         if not scheduler_output.total_num_scheduled_tokens:
             # Return empty ModelRunnerOutput if there's no work to do.
@@ -846,6 +845,8 @@ class TPUModelRunner(LoRAModelRunnerMixin):
         # xm.mark_step()
         num_reqs = self.input_batch.num_reqs
         # Run the decoder
+
+        time_model_start = time.time()
         with set_forward_context(
                 attn_metadata,
                 self.vllm_config,
@@ -855,6 +856,8 @@ class TPUModelRunner(LoRAModelRunnerMixin):
                 positions=self.position_ids,
                 inputs_embeds=inputs_embeds,
             )
+        time_model_end = time.time()
+        print(f"forward: {time_model_end - time_model_start:.2f} seconds")
         
         # assert False, "still have error in forward"
         hidden_states = self.select_hidden_states(hidden_states,
@@ -957,6 +960,8 @@ class TPUModelRunner(LoRAModelRunnerMixin):
         # captured and compiled during warm up.
         self._verify_num_xla_graphs("execute_model")
 
+        time_end = time.time()
+        print(f"execute_model time: {time_end - time_start:.2f} seconds")
         return model_runner_output
 
     def load_model(self) -> None:
