@@ -234,8 +234,6 @@ class GroupCoordinator:
             if self.rank in ranks:
                 self.ranks = ranks
                 self.world_size = len(ranks)
-                print("type of ranks in loop:", type(ranks))
-                print("ranks in loop:", ranks)
                 self.rank_in_group = ranks.index(self.rank)
                 # self.device_group = device_group
                 # self.cpu_group = cpu_group
