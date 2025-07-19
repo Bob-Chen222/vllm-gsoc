@@ -183,24 +183,16 @@ class Qwen2Attention(nnx.Module):
                 "layer_idx": extract_layer_index(prefix),
                 "dual_chunk_attention_config": dual_chunk_attention_config,
             } if dual_chunk_attention_config else {})
-        
-
-    def forward(
-        self,
-        positions: torch.Tensor,
-        hidden_states: torch.Tensor,
-    ) -> torch.Tensor:
-        qkv, _ = self.qkv_proj(hidden_states)
-        q, k, v = qkv.split([self.q_size, self.kv_size, self.kv_size], dim=-1)
-        q, k = self.rotary_emb(positions, q, k)
-        attn_output = self.attn(q, k, v)
-        output, _ = self.o_proj(attn_output)
-        return output
     
     def __call__(
         self,
         positions: jax.Array,
         hidden_states: jax.Array,
+        slot_mapping: jax.Array,
+        context_lens: jax.Array,
+        block_tables: jax.Array,
+        query_start_loc: jax.Array,
+        num_seqs: jax.Array,
     ) -> jax.Array:
         qkv, _ = self.qkv_proj(hidden_states)
         
@@ -211,7 +203,7 @@ class Qwen2Attention(nnx.Module):
         v = qkv[..., q_size + kv_size:]
         
         q, k = self.rotary_emb(positions, q, k)
-        attn_output = self.attn(q, k, v)
+        attn_output = self.attn(q, k, v, slot_mapping, context_lens, block_tables, query_start_loc, num_seqs)
         output, _ = self.o_proj(attn_output)
         return output
         
@@ -298,6 +290,11 @@ class Qwen2DecoderLayer(nnx.Module):
         positions: jax.Array,
         hidden_states: jax.Array,
         residual: Optional[jax.Array],
+        slot_mapping: jax.Array,
+        context_lens: jax.Array,
+        block_tables: jax.Array,
+        query_start_loc: jax.Array,
+        num_seqs: jax.Array,
     ) -> tuple[jax.Array, jax.Array]:
         if residual is None:
             residual = hidden_states
@@ -308,6 +305,11 @@ class Qwen2DecoderLayer(nnx.Module):
         hidden_states = self.self_attn(
             positions=positions,
             hidden_states=hidden_states,
+            slot_mapping=slot_mapping,
+            context_lens=context_lens,
+            block_tables=block_tables,
+            query_start_loc=query_start_loc,
+            num_seqs=num_seqs,
         )
 
         # Fully Connected
@@ -389,6 +391,12 @@ class Qwen2Model(nnx.Module):
         else:
             assert False, "Not implemented for jax"
             self.norm = PPMissingLayer()
+        
+        self.slot_mapping = None
+        self.context_lens = None
+        self.block_tables = None
+        self.query_start_loc = None
+        self.num_seqs = None
 
     def get_input_embeddings(self, input_ids: jax.Array) -> jax.Array:
         return self.embed_tokens(input_ids)
@@ -425,6 +433,7 @@ class Qwen2Model(nnx.Module):
         hidden_states, _ = self.norm(hidden_states, residual)
         return hidden_states
     
+    @nnx.jit
     def __call__(
         self,
         input_ids: jax.Array,
@@ -438,6 +447,11 @@ class Qwen2Model(nnx.Module):
                 positions,
                 hidden_states,
                 residual,
+                slot_mapping=self.slot_mapping,
+                context_lens=self.context_lens,
+                block_tables=self.block_tables,
+                query_start_loc=self.query_start_loc,
+                num_seqs=self.num_seqs,
             )
         hidden_states, _ = self.norm(hidden_states, residual)
         return hidden_states

@@ -215,9 +215,8 @@ class PallasAttentionBackendImpl(AttentionImpl, nnx.Module):
         )
         
         return output.reshape(num_tokens, hidden_size)
-    
-    
-    
+
+    @nnx.jit    
     def __call__(
         self,
         layer: AttentionLayer,
@@ -225,7 +224,11 @@ class PallasAttentionBackendImpl(AttentionImpl, nnx.Module):
         key: jax.Array,
         value: jax.Array,
         kv_cache: Tuple[jax.Array, jax.Array],
-        attn_metadata: PallasMetadata,
+        slot_mapping,
+        context_lens,
+        block_tables,
+        query_start_loc,
+        num_seqs,
         output: Optional[jax.Array] = None,
     ) -> jax.Array:
         assert output is None, "Output should be None for Pallas backend in jax"
@@ -240,11 +243,11 @@ class PallasAttentionBackendImpl(AttentionImpl, nnx.Module):
             key,
             value,
             kv_cache,
-            attn_metadata.slot_mapping,
-            attn_metadata.context_lens,
-            attn_metadata.block_tables,
-            attn_metadata.query_start_loc,
-            attn_metadata.num_seqs,
+            slot_mapping,
+            context_lens,
+            block_tables,
+            query_start_loc,
+            num_seqs,
         )
         return output
 

@@ -617,16 +617,22 @@ class TPUModelRunner(LoRAModelRunnerMixin):
             self.set_active_loras(self.input_batch,
                                   padded_num_scheduled_tokens_per_req)
 
-        attn_metadata = PallasMetadata(
-            slot_mapping=slot_mapping,
-            block_tables=block_tables,
-            context_lens=seq_lens,
-            query_start_loc=query_start_loc,
-            num_seqs= jax.device_put(
-                jnp.array([num_reqs], dtype=jnp.int32),
-                jax.devices()[0]
-            )
-        )
+        # attn_metadata = PallasMetadata(
+        #     slot_mapping=slot_mapping,
+        #     block_tables=block_tables,
+        #     context_lens=seq_lens,
+        #     query_start_loc=query_start_loc,
+        #     num_seqs= jax.device_put(
+        #         jnp.array([num_reqs], dtype=jnp.int32),
+        #         jax.devices()[0]
+        #     )
+        # )
+        self.model.model.slot_mapping = slot_mapping
+        self.model.model.block_tables = block_tables
+        self.model.model.context_lens = seq_lens
+        self.model.model.query_start_loc = query_start_loc
+        self.model.model.num_seqs = jax.device_put(
+            jnp.array([num_reqs], dtype=jnp.int32), jax.devices()[0])
         # NOTE(woosuk): Due to chunked prefills, there can be at most 1 partial
         # request in the batch. While we should not sample any token from this
         # partial request, we do so for simplicity. We will ignore the sampled
@@ -653,10 +659,11 @@ class TPUModelRunner(LoRAModelRunnerMixin):
 
         layer_names = get_layers_from_vllm_config(self.vllm_config,
                                                   Attention).keys()
-        per_layer_attn_metadata = {
-            layer_name: attn_metadata
-            for layer_name in layer_names
-        }
+        # per_layer_attn_metadata = {
+        #     layer_name: attn_metadata
+        #     for layer_name in layer_names
+        # }
+        per_layer_attn_metadata = None
         return per_layer_attn_metadata, logits_indices, padded_num_reqs
 
     def _scatter_placeholders(
