@@ -303,13 +303,13 @@ class Qwen2DecoderLayer(nnx.Module):
             hidden_states, residual = self.input_layernorm(
                 hidden_states, residual)
         hidden_states = self.self_attn(
-            positions=positions,
-            hidden_states=hidden_states,
-            slot_mapping=slot_mapping,
-            context_lens=context_lens,
-            block_tables=block_tables,
-            query_start_loc=query_start_loc,
-            num_seqs=num_seqs,
+            positions,
+            hidden_states,
+            slot_mapping,
+            context_lens,
+            block_tables,
+            query_start_loc,
+            num_seqs,
         )
 
         # Fully Connected
@@ -447,11 +447,11 @@ class Qwen2Model(nnx.Module):
                 positions,
                 hidden_states,
                 residual,
-                slot_mapping=self.slot_mapping,
-                context_lens=self.context_lens,
-                block_tables=self.block_tables,
-                query_start_loc=self.query_start_loc,
-                num_seqs=self.num_seqs,
+                self.slot_mapping,
+                self.context_lens,
+                self.block_tables,
+                self.query_start_loc,
+                self.num_seqs,
             )
         hidden_states, _ = self.norm(hidden_states, residual)
         return hidden_states
@@ -611,7 +611,6 @@ class Qwen2ForCausalLM(nnx.Module):
         hidden_states = self.model(input_ids, positions)
         return hidden_states
 
-    # @jax.jit
     def compute_logits(
         self,
         hidden_states: jax.Array,

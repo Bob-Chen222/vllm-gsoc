@@ -2,6 +2,7 @@
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
 from dataclasses import dataclass
+from flax import struct
 from typing import Any, Optional, Tuple
 
 import torch
@@ -87,7 +88,7 @@ class PallasAttentionBackend(AttentionBackend):
         return page_size
 
 
-@dataclass
+@struct.dataclass
 class PallasMetadata:
     # NOTE(sang): Definition of context_len, query_len, and seq_len.
     # |---------- N-1 iteration --------|
