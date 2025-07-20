@@ -162,18 +162,17 @@ class RMSNorm(CustomOp):
         self,
         x: jax.Array,
         residual: jax.Array,
-    ) -> Union[jax.Array, tuple[jax.Array, jax.Array]]:
+    ) -> tuple[jax.Array, jax.Array]:
         x = x + residual
         residual = x
-        hidden_size = x.shape[-1]
-        if hidden_size != self.hidden_size:
-            raise ValueError("Expected hidden_size to be "
-                             f"{self.hidden_size}, but found: {hidden_size}")
+        # hidden_size = x.shape[-1]
+        # if hidden_size != self.hidden_size:
+        #     raise ValueError("Expected hidden_size to be "
+        #                      f"{self.hidden_size}, but found: {hidden_size}")
         x_var = x
 
         variance = jnp.power(x_var, 2).mean(axis=-1, keepdims=True)
-        x = x * (1.0 / jnp.sqrt(variance + self.variance_epsilon))
-        assert self.has_weight, "Weight must be present for RMSNorm in jax refactor"
+        x = x * (1.0 / jnp.sqrt(variance + 1e-6))
         x = x * self.weight
         return x, residual
 
