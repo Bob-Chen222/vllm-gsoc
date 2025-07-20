@@ -173,7 +173,6 @@ class RMSNorm(CustomOp):
 
         variance = jnp.power(x_var, 2).mean(axis=-1, keepdims=True)
         x = x * (1.0 / jnp.sqrt(variance + self.variance_epsilon))
-        # x = x.astype(orig_dtype)
         assert self.has_weight, "Weight must be present for RMSNorm in jax refactor"
         x = x * self.weight
         return x, residual

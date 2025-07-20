@@ -203,7 +203,8 @@ class UnquantizedLinearMethod(LinearMethodBase):
     def apply(self,
               layer: nnx.Module,
               x: jax.Array,
-              bias: Optional[jax.Array] = None) -> jax.Array:
+              bias: jax.Array) -> jax.Array:
+
         res = x @ layer.weight.value.T + (bias.value if bias is not None else 0)
         return res
 
