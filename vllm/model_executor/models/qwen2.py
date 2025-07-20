@@ -289,19 +289,15 @@ class Qwen2DecoderLayer(nnx.Module):
         self,
         positions: jax.Array,
         hidden_states: jax.Array,
-        residual: Optional[jax.Array],
+        residual: jax.Array,
         slot_mapping: jax.Array,
         context_lens: jax.Array,
         block_tables: jax.Array,
         query_start_loc: jax.Array,
         num_seqs: jax.Array,
     ) -> tuple[jax.Array, jax.Array]:
-        if residual is None:
-            residual = hidden_states
-            hidden_states = self.input_layernorm(hidden_states)
-        else:
-            hidden_states, residual = self.input_layernorm(
-                hidden_states, residual)
+        hidden_states, residual = self.input_layernorm(
+            hidden_states, residual)
         hidden_states = self.self_attn(
             positions,
             hidden_states,
@@ -441,7 +437,7 @@ class Qwen2Model(nnx.Module):
     ) -> jax.Array:
         # NOTE (Bob): this is a hack for now, I just disabled lora and ppsupport and everything is simpilfied
         hidden_states = self.get_input_embeddings(input_ids)
-        residual = None
+        residual = hidden_states
         for layer in self.layers[self.start_layer:self.end_layer]:
             hidden_states, residual = layer(
                 positions,

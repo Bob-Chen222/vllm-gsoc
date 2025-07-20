@@ -1352,30 +1352,23 @@ class RowParallelLinear(LinearBase):
     
     def __call__(self, input_
     ) -> Union[jax.Array, tuple[jax.Array, Optional[nnx.Param]]]:
-        if self.input_is_parallel:
-            input_parallel = input_
-        else:
-            # NOTE (Bob): This is a hack for now
-            tp_rank = 0
-            tp_size = 1
-            splitted_input = jnp.split(input_, num_or_size_splits=tp_size, axis=0)
-            input_parallel = splitted_input[tp_rank]
-
+        # input_parallel = input_
         # Matrix multiply.
-        assert self.quant_method is not None
+        # assert self.quant_method is not None
         # Only fuse bias add into GEMM for rank 0 (this ensures that
         # bias will not get added more than once in TP>1 case)
         bias_ = None if (self.tp_rank > 0 or self.skip_bias_add) else self.bias
         output_parallel = self.quant_method.apply(self,
-                                                  input_parallel,
+                                                  input_,
                                                   bias=bias_)
         # NOTE (Bob): This is a hack for now
         output = output_parallel
 
-        output_bias = self.bias if self.skip_bias_add else None
+        # output_bias = self.bias if self.skip_bias_add else None
+        output_bias = None
 
-        if not self.return_bias:
-            return output
+        # if not self.return_bias:
+        #     return output
         return output, output_bias
 
     def extra_repr(self) -> str:
