@@ -217,7 +217,7 @@ class PallasAttentionBackendImpl(AttentionImpl, nnx.Module):
         
         return output.reshape(num_tokens, hidden_size)
 
-    @nnx.jit    
+    # @nnx.jit    
     def __call__(
         self,
         layer: AttentionLayer,

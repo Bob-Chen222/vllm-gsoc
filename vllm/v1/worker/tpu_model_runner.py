@@ -1024,35 +1024,31 @@ class TPUModelRunner(LoRAModelRunnerMixin):
             self.model = model
         self.sampler = TPUSampler()
 
-    @torch.no_grad()
     def _dummy_run(self, num_tokens: int) -> None:
-        assert False, "no dummy run in jax"
         if self.is_multimodal_model:
+            assert False, "not in jax"
             input_ids = None
-            inputs_embeds = torch.zeros((num_tokens, self.hidden_size),
+            inputs_embeds = jnp.empty((num_tokens, self.hidden_size),
                                         dtype=self.dtype,
                                         device=self.device)
         else:
-            input_ids = torch.zeros((num_tokens),
-                                    dtype=torch.int32).to(self.device)
+            input_ids = jnp.empty((num_tokens), dtype=jnp.int32)
             inputs_embeds = None
         actual_num_reqs = min(num_tokens, self.max_num_reqs)
-        position_ids = torch.zeros(num_tokens,
-                                   dtype=torch.int32).to(self.device)
-        slot_mapping = torch.zeros(num_tokens,
-                                   dtype=torch.int64).to(self.device)
-        block_tables = torch.zeros(
+        position_ids = jnp.empty(num_tokens,
+                                   dtype=jnp.int32)
+        slot_mapping = jnp.empty(num_tokens,
+                                   dtype=jnp.int64)
+        block_tables = jnp.empty(
             (self.max_num_reqs, self.block_table_cpu.shape[1]),
-            dtype=torch.int32).to(self.device)
+            dtype=jnp.int32)
         query_lens = [1] * self.max_num_reqs
-        query_start_loc = torch.cumsum(torch.tensor([0] + query_lens,
-                                                    dtype=torch.int32),
-                                       dim=0,
-                                       dtype=torch.int32).to(self.device)
-        context_lens = torch.ones((self.max_num_reqs, ),
-                                  dtype=torch.int32).to(self.device)
-        num_seqs = torch.tensor([actual_num_reqs],
-                                dtype=torch.int32).to(self.device)
+        query_start_loc = jnp.cumsum(jnp.array([0] + query_lens, dtype=jnp.int32), axis=0)
+
+        context_lens = jnp.ones((self.max_num_reqs, ),
+                                  dtype=jnp.int32)
+        num_seqs = jnp.array([actual_num_reqs], dtype=jnp.int32)
+        print("num_seqs", num_seqs)
         attn_metadata = PallasMetadata(
             slot_mapping=slot_mapping,
             block_tables=block_tables,
@@ -1075,13 +1071,19 @@ class TPUModelRunner(LoRAModelRunnerMixin):
             for layer_name in layer_names
         }
 
+        self.model.model.slot_mapping = slot_mapping
+        self.model.model.block_tables = block_tables
+        self.model.model.context_lens = context_lens
+        self.model.model.query_start_loc = query_start_loc
+        self.model.model.num_seqs = num_seqs
+
         with self.maybe_select_dummy_loras(
                 self.lora_config,
                 np.array([num_tokens], dtype=np.int32)), set_forward_context(
                     per_layer_attn_metadata, self.vllm_config, 0):
             out = self.model(input_ids=input_ids,
                              positions=position_ids,
-                             inputs_embeds=inputs_embeds)
+                             inputs_embeds=inputs_embeds,)
         self._hidden_states_dtype = out.dtype
 
     def _set_active_loras(self, prompt_lora_mapping, token_lora_mapping,
@@ -1160,10 +1162,10 @@ class TPUModelRunner(LoRAModelRunnerMixin):
         for num_tokens in self.num_tokens_paddings:
             logger.info("  -- num_tokens: %d", num_tokens)
             self._dummy_run(num_tokens)
-        xm.wait_device_ops()
+        # xm.wait_device_ops()
         end = time.perf_counter()
         logger.info("Compilation finished in %.2f [secs].", end - start)
-        self._update_num_xla_graphs("model backbone")
+        # self._update_num_xla_graphs("model backbone")
 
     def _precompile_select_hidden_states(self) -> None:
         # Compile hidden state selection function for bucketed
@@ -1288,16 +1290,14 @@ class TPUModelRunner(LoRAModelRunnerMixin):
         Precompile all the subgraphs with possible input shapes.
         """
         # NOTE (Bob): we are not using compilation anymore
-        assert False, "not supported"
-        return
         with self.maybe_setup_dummy_loras(self.lora_config):
-            self._precompile_mm_encoder()
+            # self._precompile_mm_encoder()
             self._precompile_backbone()
-            self._precompile_select_hidden_states()
-            self._precompile_compute_logits()
-            self._precompile_structured_decoding()
-            self._precompile_sample_from_logits()
-            self._precompile_gather_logprobs()
+            # self._precompile_select_hidden_states()
+            # self._precompile_compute_logits()
+            # self._precompile_structured_decoding()
+            # self._precompile_sample_from_logits()
+            # self._precompile_gather_logprobs()
 
     def profile_run(
         self,
@@ -1466,7 +1466,7 @@ class TPUModelRunner(LoRAModelRunnerMixin):
     def select_hidden_states(self, hidden_states, indices_do_sample):
         return hidden_states[indices_do_sample]
 
-    @partial(jax.jit, static_argnames=['self'])
+    # @partial(jax.jit, static_argnames=['self'])
     def compute_logits(self,
                        sample_hidden_states: jax.Array) -> jax.Array:
         return self.model.compute_logits(sample_hidden_states, None)

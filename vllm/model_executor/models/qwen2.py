@@ -603,7 +603,6 @@ class Qwen2ForCausalLM(nnx.Module):
         intermediate_tensors: Optional[IntermediateTensors] = None,
         inputs_embeds: Optional[jax.Array] = None,
     ) -> Union[jax.Array, IntermediateTensors]:
-        print("input_ids", input_ids.shape)
         hidden_states = self.model(input_ids, positions)
         return hidden_states
 
