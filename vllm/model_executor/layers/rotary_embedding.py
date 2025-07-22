@@ -37,6 +37,8 @@ import jax.numpy as jnp
 from vllm.model_executor.custom_op import CustomOp
 from vllm.platforms import current_platform
 
+import time
+
 if current_platform.is_cuda():
     from vllm.vllm_flash_attn.layers.rotary import apply_rotary_emb
 
@@ -188,6 +190,7 @@ class RotaryEmbedding(CustomOp):
             key = torch.cat((key_rot, key_pass), dim=-1).reshape(key_shape)
         return query, key
     
+    # @nnx.jit
     def __call__(
             self,
             positions: jax.Array,
@@ -195,6 +198,7 @@ class RotaryEmbedding(CustomOp):
             key: Optional[jax.Array] = None,
             offsets: Optional[jax.Array] = None,
     ) -> tuple[jax.Array, Optional[jax.Array]]:
+        # time_start = time.time()
         positions = positions.flatten()
         num_tokens = positions.shape[0]
         cos_sin = jnp.take(self.cos_sin_cache.value, positions, axis=0)
@@ -216,6 +220,8 @@ class RotaryEmbedding(CustomOp):
         key_rot = _apply_rotary_emb_jax(key_rot, cos, sin,
                                             self.is_neox_style)
         key = jnp.reshape(jnp.concatenate([key_rot, key_pass], axis=-1), key_shape)
+        # time_end = time.time()
+        # print(f"RotaryEmbedding forward took {time_end - time_start:.4f} seconds")
         return query, key
 
     def forward_cuda(
