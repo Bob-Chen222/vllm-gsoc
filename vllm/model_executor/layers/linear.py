@@ -205,7 +205,7 @@ class UnquantizedLinearMethod(LinearMethodBase):
               x: jax.Array,
               bias: jax.Array) -> jax.Array:
 
-        res = x @ layer.weight.value.T + (bias.value if bias is not None else 0)
+        res = x @ layer.weight.T + bias
         return res
 
 class LinearBase(nnx.Module):
@@ -426,12 +426,11 @@ class ColumnParallelLinear(LinearBase):
                 in WEIGHT_LOADER_V2_SUPPORTED else self.weight_loader))
         
         self.bias = None
-        if bias:
-            self.bias = nnx.Param(
-                jnp.empty(self.output_size_per_partition,
-                            dtype=params_dtype))
-            self.bias_output_dim = 0
-            self.bias_weight_loader = self.weight_loader
+        self.bias = nnx.Param(
+            jnp.empty(self.output_size_per_partition,
+                        dtype=params_dtype))
+        self.bias_output_dim = 0
+        self.bias_weight_loader = self.weight_loader
 
     def weight_loader(self, param: nnx.State, loaded_weight: jax.Array):
         # NOTE (Bob): This is a hack for now
@@ -506,15 +505,13 @@ class ColumnParallelLinear(LinearBase):
     
     def __call__(self, input_
     ) -> Union[jax.Array, tuple[jax.Array, Optional[Parameter]]]:
-        bias = self.bias if not self.skip_bias_add else None
+        bias = self.bias
         # Matrix multiply.
-        assert self.quant_method is not None
-        output_parallel = self.quant_method.apply(self, input_, bias)
+        # output_parallel = self.quant_method.apply(self, input_, bias)
+        output_parallel = input_ @self.weight.T + bias
         # NOTE (Bob): This is a hack for now
         output = output_parallel
-        output_bias = self.bias if self.skip_bias_add else None
-        if not self.return_bias:
-            return output
+        output_bias = self.bias
         return output, output_bias
 
 
@@ -1261,12 +1258,10 @@ class RowParallelLinear(LinearBase):
         if not reduce_results and (bias and not skip_bias_add):
             raise ValueError("When not reduce the results, adding bias to the "
                              "results can lead to incorrect results")
-        self.bias = None
-        if bias:
-            self.bias = nnx.Param(
-                jnp.empty(self.output_size, dtype=params_dtype))
-            self.output_dim = 0
-            self.weight_loader = self.weight_loader
+        self.bias = nnx.Param(
+            jnp.empty(self.output_size, dtype=params_dtype))
+        self.output_dim = 0
+        self.weight_loader = self.weight_loader
 
     def weight_loader(self, param: nnx.Param, loaded_weight: jax.Array):
         # NOTE (Bob): This is a hack for now

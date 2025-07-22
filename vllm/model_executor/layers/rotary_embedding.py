@@ -82,21 +82,12 @@ def _apply_rotary_emb_jax(
     cos = jnp.expand_dims(cos, axis=-2).astype(x.dtype)
     sin = jnp.expand_dims(sin, axis=-2).astype(x.dtype)
 
-    if is_neox_style:
-        x1, x2 = jnp.split(x, 2, axis=-1)
-    else:
-        x1 = x[..., ::2]
-        x2 = x[..., 1::2]
+    x1, x2 = jnp.split(x, 2, axis=-1)
 
     o1 = x1 * cos - x2 * sin
     o2 = x2 * cos + x1 * sin
 
-    if is_neox_style:
-        return jnp.concatenate([o1, o2], axis=-1)
-    else:
-        # stack then flatten last 2 dims
-        stacked = jnp.stack([o1, o2], axis=-1)  # shape: [..., dim/2, 2]
-        return jnp.reshape(stacked, x.shape)
+    return jnp.concatenate([o1, o2], axis=-1)
 
 
 
@@ -204,8 +195,6 @@ class RotaryEmbedding(CustomOp):
             key: Optional[jax.Array] = None,
             offsets: Optional[jax.Array] = None,
     ) -> tuple[jax.Array, Optional[jax.Array]]:
-        if offsets is not None:
-            positions = positions + offsets
         positions = positions.flatten()
         num_tokens = positions.shape[0]
         cos_sin = jnp.take(self.cos_sin_cache.value, positions, axis=0)
@@ -220,14 +209,13 @@ class RotaryEmbedding(CustomOp):
         query = jnp.reshape(jnp.concatenate([query_rot, query_pass], axis=-1), query_shape)
 
         # key may be None in some cases, e.g. cross-layer KV sharing
-        if key is not None:
-            key_shape = key.shape
-            key = jnp.reshape(key, (num_tokens, -1, self.head_size))
-            key_rot = key[..., :self.rotary_dim]
-            key_pass = key[..., self.rotary_dim:]
-            key_rot = _apply_rotary_emb_jax(key_rot, cos, sin,
-                                              self.is_neox_style)
-            key = jnp.reshape(jnp.concatenate([key_rot, key_pass], axis=-1), key_shape)
+        key_shape = key.shape
+        key = jnp.reshape(key, (num_tokens, -1, self.head_size))
+        key_rot = key[..., :self.rotary_dim]
+        key_pass = key[..., self.rotary_dim:]
+        key_rot = _apply_rotary_emb_jax(key_rot, cos, sin,
+                                            self.is_neox_style)
+        key = jnp.reshape(jnp.concatenate([key_rot, key_pass], axis=-1), key_shape)
         return query, key
 
     def forward_cuda(
