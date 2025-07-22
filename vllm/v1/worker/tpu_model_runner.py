@@ -287,6 +287,7 @@ class TPUModelRunner(LoRAModelRunnerMixin):
                 self.max_num_mm_items_by_modality[modality] = max_num_mm_items
 
         self.sample_from_logits_func = self.sample_from_logits
+        self.count = 0
 
     def _update_num_xla_graphs(self, case_str):
         check_comp = self.check_recompilation and not self.enforce_eager
@@ -832,6 +833,7 @@ class TPUModelRunner(LoRAModelRunnerMixin):
     ) -> ModelRunnerOutput:
         # Update cached state
         time_start = time.time()
+        jax.profiler.start_trace(f"execute_model_{self.count}-data")
         self._update_states(scheduler_output)
         if not scheduler_output.total_num_scheduled_tokens:
             # Return empty ModelRunnerOutput if there's no work to do.
@@ -969,6 +971,8 @@ class TPUModelRunner(LoRAModelRunnerMixin):
 
         time_end = time.time()
         print(f"execute_model time: {time_end - time_start:.2f} seconds")
+        jax.profiler.stop_trace()
+        self.count += 1
         return model_runner_output
 
     def load_model(self) -> None:
