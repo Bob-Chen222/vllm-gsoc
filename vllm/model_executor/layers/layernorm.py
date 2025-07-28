@@ -166,18 +166,33 @@ class RMSNorm(CustomOp):
         residual: jax.Array,
     ) -> tuple[jax.Array, jax.Array]:
         x = x + residual
-        residual = x
-        # hidden_size = x.shape[-1]
-        # if hidden_size != self.hidden_size:
-        #     raise ValueError("Expected hidden_size to be "
-        #                      f"{self.hidden_size}, but found: {hidden_size}")
-        x_var = x
+        residual_out = x
+        # Fuse residual add and RMS normalization for fewer intermediate tensors.
+        # If a variance size override is specified, follow the same logic as the
+        # PyTorch path to maintain parity.
+        if self.variance_size_override is None:
+            x_var = x
+        else:
+            hidden_size = x.shape[-1]
+            if hidden_size < self.variance_size_override:
+                raise ValueError(
+                    "Expected hidden_size to be at least "
+                    f"{self.variance_size_override}, but found: {hidden_size}")
+            x_var = x[..., :self.variance_size_override]
 
-        variance = jnp.power(x_var, 2).mean(axis=-1, keepdims=True)
-        x = x * (1.0 / jnp.sqrt(variance + 1e-6))
-        x = x * self.weight
-        # print(f"RMSNorm forward time: {time_end - time_start:.6f} seconds")
-        return x, residual
+        # Mean of squared activations (RMS).
+        variance = jnp.mean(jnp.square(x_var), axis=-1, keepdims=True)
+        inv_rms = jax.lax.rsqrt(variance + self.variance_epsilon)
+
+        # Apply normalization and optional learned weight in a single fused op
+        # to reduce memory traffic.
+        x = x * inv_rms
+        if self.has_weight:
+            x = x * self.weight
+
+        # The residual after addition is simply `x` before normalization.
+        # Return normalized output and pre-normalization residual.
+        return x, residual_out
 
     def extra_repr(self) -> str:
         s = f"hidden_size={self.weight.data.size(0)}"
