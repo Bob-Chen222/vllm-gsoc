@@ -833,7 +833,6 @@ class TPUModelRunner(LoRAModelRunnerMixin):
     ) -> ModelRunnerOutput:
         # Update cached state
         time_start = time.time()
-        jax.profiler.start_trace(f"execute_model_{self.count}-data")
         self._update_states(scheduler_output)
         if not scheduler_output.total_num_scheduled_tokens:
             # Return empty ModelRunnerOutput if there's no work to do.
@@ -971,7 +970,6 @@ class TPUModelRunner(LoRAModelRunnerMixin):
 
         time_end = time.time()
         print(f"execute_model time: {time_end - time_start:.2f} seconds")
-        jax.profiler.stop_trace()
         self.count += 1
         return model_runner_output
 

@@ -14,6 +14,8 @@ import vllm.envs as envs
 from vllm.model_executor.custom_op import CustomOp
 from vllm.platforms import current_platform
 
+import time
+
 
 def is_rocm_aiter_rmsnorm_enabled() -> bool:
     return current_platform.is_rocm() \
@@ -174,6 +176,7 @@ class RMSNorm(CustomOp):
         variance = jnp.power(x_var, 2).mean(axis=-1, keepdims=True)
         x = x * (1.0 / jnp.sqrt(variance + 1e-6))
         x = x * self.weight
+        # print(f"RMSNorm forward time: {time_end - time_start:.6f} seconds")
         return x, residual
 
     def extra_repr(self) -> str:

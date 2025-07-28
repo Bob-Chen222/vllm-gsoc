@@ -30,6 +30,7 @@ from typing import Any, Optional, Union
 import torch
 # from torch import nn
 from transformers import Qwen2Config
+import time
 
 import flax.nnx as nnx
 import jax
@@ -296,8 +297,12 @@ class Qwen2DecoderLayer(nnx.Module):
         query_start_loc: jax.Array,
         num_seqs: jax.Array,
     ) -> tuple[jax.Array, jax.Array]:
+        time1_start = time.time()
         hidden_states, residual = self.input_layernorm(
             hidden_states, residual)
+        time1_end = time.time()
+        # print(f"LayerNorm time: {time1_end - time1_start:.4f} seconds")
+        time2_start = time.time()
         hidden_states = self.self_attn(
             positions,
             hidden_states,
@@ -307,11 +312,16 @@ class Qwen2DecoderLayer(nnx.Module):
             query_start_loc,
             num_seqs,
         )
+        time2_end = time.time()
+        # print(f"Self Attention time: {time2_end - time2_start:.4f} seconds")
 
         # Fully Connected
+        time3_start = time.time()
         hidden_states, residual = self.post_attention_layernorm(
             hidden_states, residual)
         hidden_states = self.mlp(hidden_states)
+        time3_end = time.time()
+        # print(f"MLP time: {time3_end - time3_start:.4f} seconds")
         return hidden_states, residual
     
     
@@ -429,7 +439,7 @@ class Qwen2Model(nnx.Module):
         hidden_states, _ = self.norm(hidden_states, residual)
         return hidden_states
     
-    @nnx.jit
+    # @nnx.jit
     def __call__(
         self,
         input_ids: jax.Array,
@@ -438,6 +448,7 @@ class Qwen2Model(nnx.Module):
         # NOTE (Bob): this is a hack for now, I just disabled lora and ppsupport and everything is simpilfied
         hidden_states = self.get_input_embeddings(input_ids)
         residual = hidden_states
+        print("start of round")
         for layer in self.layers[self.start_layer:self.end_layer]:
             hidden_states, residual = layer(
                 positions,
@@ -449,6 +460,7 @@ class Qwen2Model(nnx.Module):
                 self.query_start_loc,
                 self.num_seqs,
             )
+        print("end of round")
         hidden_states, _ = self.norm(hidden_states, residual)
         return hidden_states
 
