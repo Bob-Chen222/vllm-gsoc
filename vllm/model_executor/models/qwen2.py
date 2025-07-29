@@ -319,9 +319,14 @@ class Qwen2DecoderLayer(nnx.Module):
         time3_start = time.time()
         hidden_states, residual = self.post_attention_layernorm(
             hidden_states, residual)
-        hidden_states = self.mlp(hidden_states)
         time3_end = time.time()
-        # print(f"MLP time: {time3_end - time3_start:.4f} seconds")
+        # print(f"post_attention_layernorm time: {time3_end - time3_start:.4f} seconds")
+
+        time4_start = time.time()
+        hidden_states = self.mlp(hidden_states)
+        hidden_states.block_until_ready()
+        time4_end = time.time()
+        print(f"MLP time: {time4_end - time4_start:.4f} seconds")
         return hidden_states, residual
     
     
@@ -461,6 +466,7 @@ class Qwen2Model(nnx.Module):
                 self.num_seqs,
             )
         print("end of round")
+        assert False
         hidden_states, _ = self.norm(hidden_states, residual)
         return hidden_states
 

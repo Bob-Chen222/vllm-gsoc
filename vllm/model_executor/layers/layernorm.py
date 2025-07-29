@@ -14,9 +14,31 @@ import vllm.envs as envs
 from vllm.model_executor.custom_op import CustomOp
 from vllm.platforms import current_platform
 import numpy as np
+from functools import partial
 
 import time
 
+@jax.jit
+def _rms_norm(weight, x, residual):
+    x = x + residual
+    residual_out = x
+    # Fuse residual add and RMS normalization for fewer intermediate tensors.
+    # If a variance size override is specified, follow the same logic as the
+    # PyTorch path to maintain parity.
+    x_var = x
+
+    # Mean of squared activations (RMS).
+    variance = jnp.mean(jnp.square(x_var), axis=-1, keepdims=True, dtype=x.dtype)
+    inv_rms = jax.lax.rsqrt(variance + 1e-6)
+
+    # Apply normalization and optional learned weight in a single fused op
+    # to reduce memory traffic.
+    x = x * inv_rms
+    x = x * weight
+
+    # The residual after addition is simply `x` before normalization.
+    # Return normalized output and pre-normalization residual.
+    return x, residual_out
 
 def is_rocm_aiter_rmsnorm_enabled() -> bool:
     return current_platform.is_rocm() \
@@ -160,42 +182,14 @@ class RMSNorm(CustomOp):
             return x
         else:
             return x, residual
-    
+        
     def __call__(
         self,
         x: jax.Array,
         residual: jax.Array,
     ) -> tuple[jax.Array, jax.Array]:
-        np.savez("arrays.npz", weight=np.array(self.weight), x=np.array(x), residual=np.array(residual))
-        assert False
-        x = x + residual
-        residual_out = x
-        # Fuse residual add and RMS normalization for fewer intermediate tensors.
-        # If a variance size override is specified, follow the same logic as the
-        # PyTorch path to maintain parity.
-        if self.variance_size_override is None:
-            x_var = x
-        else:
-            hidden_size = x.shape[-1]
-            if hidden_size < self.variance_size_override:
-                raise ValueError(
-                    "Expected hidden_size to be at least "
-                    f"{self.variance_size_override}, but found: {hidden_size}")
-            x_var = x[..., :self.variance_size_override]
-
-        # Mean of squared activations (RMS).
-        variance = jnp.mean(jnp.square(x_var), axis=-1, keepdims=True)
-        inv_rms = jax.lax.rsqrt(variance + self.variance_epsilon)
-
-        # Apply normalization and optional learned weight in a single fused op
-        # to reduce memory traffic.
-        x = x * inv_rms
-        if self.has_weight:
-            x = x * self.weight
-
-        # The residual after addition is simply `x` before normalization.
-        # Return normalized output and pre-normalization residual.
-        return x, residual_out
+        x, residual = _rms_norm(self.weight.value, x, residual)
+        return x, residual
 
     def extra_repr(self) -> str:
         s = f"hidden_size={self.weight.data.size(0)}"
