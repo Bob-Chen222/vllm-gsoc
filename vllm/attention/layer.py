@@ -130,7 +130,7 @@ class Attention(nnx.Module):
 
         # During model initialization, the default dtype is set as the model
         # weight and activation dtype.
-        dtype = jnp.float32
+        dtype = jnp.bfloat16
         attn_backend = get_attn_backend(head_size,
                                         dtype,
                                         kv_cache_dtype,

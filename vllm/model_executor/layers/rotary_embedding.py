@@ -121,7 +121,7 @@ class RotaryEmbedding(CustomOp):
         max_position_embeddings: int,
         base: float,
         is_neox_style: bool,
-        dtype: torch.dtype,
+        dtype: jnp.dtype
     ) -> None:
         super().__init__()
         self.head_size = head_size
@@ -1769,7 +1769,7 @@ def get_rope(
     dual_chunk_attention_config: Optional[dict[str, Any]] = None,
 ) -> RotaryEmbedding:
     if dtype is None:
-        dtype = jnp.float32
+        dtype = jnp.bfloat16
     if rope_scaling is not None:
         # Transforms every value that is a list into a tuple for caching calls
         rope_scaling_tuple = {

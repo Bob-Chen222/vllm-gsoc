@@ -862,8 +862,10 @@ class TPUModelRunner(LoRAModelRunnerMixin):
             hidden_states = self.model(
                 input_ids=input_ids,
                 positions=self.position_ids,
-                inputs_embeds=inputs_embeds,
+                # inputs_embeds=inputs_embeds,
             )
+            print("input_ids shape:", input_ids.shape)
+            print("positions shape:", self.position_ids.shape)
         time_model_end = time.time()
         print(f"forward: {time_model_end - time_model_start:.2f} seconds")
         
@@ -1050,7 +1052,6 @@ class TPUModelRunner(LoRAModelRunnerMixin):
         context_lens = jnp.ones((self.max_num_reqs, ),
                                   dtype=jnp.int32)
         num_seqs = jnp.array([actual_num_reqs], dtype=jnp.int32)
-        print("num_seqs", num_seqs)
         attn_metadata = PallasMetadata(
             slot_mapping=slot_mapping,
             block_tables=block_tables,
@@ -1086,7 +1087,10 @@ class TPUModelRunner(LoRAModelRunnerMixin):
             out = self.model(input_ids=input_ids,
                              positions=position_ids,
                              inputs_embeds=inputs_embeds,)
+            print("input_id shape:", input_ids.shape)
+            print("position_id shape:", position_ids.shape)
         self._hidden_states_dtype = out.dtype
+        print("---------------dummy run finished-----------------")
 
     def _set_active_loras(self, prompt_lora_mapping, token_lora_mapping,
                           lora_requests) -> None:
