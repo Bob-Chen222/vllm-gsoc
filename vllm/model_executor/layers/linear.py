@@ -1365,18 +1365,9 @@ class RowParallelLinear(LinearBase):
         # assert self.quant_method is not None
         # Only fuse bias add into GEMM for rank 0 (this ensures that
         # bias will not get added more than once in TP>1 case)
-        bias_ = None if (self.tp_rank > 0 or self.skip_bias_add) else self.bias
-        output_parallel = self.quant_method.apply(self,
-                                                  input_,
-                                                  bias=bias_)
-        # NOTE (Bob): This is a hack for now
-        output = output_parallel
-
-        # output_bias = self.bias if self.skip_bias_add else None
+        bias_ = self.bias.value
+        output = _apply(self.weight.value, input_, bias=bias_)
         output_bias = None
-
-        # if not self.return_bias:
-        #     return output
         return output, output_bias
 
     def extra_repr(self) -> str:

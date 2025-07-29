@@ -466,7 +466,7 @@ class Qwen2Model(nnx.Module):
                 self.num_seqs,
             )
         print("end of round")
-        assert False
+        # assert False
         hidden_states, _ = self.norm(hidden_states, residual)
         return hidden_states
 
