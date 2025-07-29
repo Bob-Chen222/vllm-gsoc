@@ -83,7 +83,7 @@ class SiluAndMul(CustomOp):
     def __call__ (self, x: jax.Array) -> jax.Array:
         """JAX implementation equivalent to forward()."""
         d = x.shape[-1] // 2
-        return jax.nn.silu(x[..., :d]) * x[..., d:]
+        return nnx.silu(x[..., :d]) * x[..., d:]
 
     def forward_cuda(self, x: torch.Tensor) -> torch.Tensor:
         d = x.shape[-1] // 2

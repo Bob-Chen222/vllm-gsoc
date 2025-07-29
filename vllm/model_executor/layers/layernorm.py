@@ -118,7 +118,7 @@ class RMSNorm(CustomOp):
         if dtype is not None:
             self.weight = jnp.ones(hidden_size, dtype=dtype)
         else:
-            self.weight = jnp.ones(hidden_size)
+            self.weight = jnp.ones(hidden_size, dtype=jnp.bfloat16)
         if self.has_weight:
             self.weight = nnx.Param(self.weight)
 

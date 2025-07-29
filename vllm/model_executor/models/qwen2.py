@@ -343,7 +343,7 @@ class Qwen2Model(nnx.Module):
                  vllm_config: VllmConfig,
                  prefix: str = "",
                  decoder_layer_type: type[nnx.Module] = Qwen2DecoderLayer):
-        super().__init__()
+        # super().__init__()
 
         config = vllm_config.model_config.hf_config
         cache_config = vllm_config.cache_config

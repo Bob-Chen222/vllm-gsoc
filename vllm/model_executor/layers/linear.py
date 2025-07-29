@@ -239,7 +239,7 @@ class LinearBase(nnx.Module):
         self.output_size = output_size
         self.skip_bias_add = skip_bias_add
         if params_dtype is None:
-            params_dtype = jnp.float32
+            params_dtype = jnp.bfloat16
         self.params_dtype = params_dtype
         if quant_config is None:
             self.quant_method: Optional[
@@ -426,6 +426,7 @@ class ColumnParallelLinear(LinearBase):
                 in WEIGHT_LOADER_V2_SUPPORTED else self.weight_loader))
         
         self.bias = None
+        assert params_dtype == jnp.bfloat16
         self.bias = nnx.Param(
             jnp.empty(self.output_size_per_partition,
                         dtype=params_dtype))
@@ -565,6 +566,8 @@ class MergedColumnParallelLinear(ColumnParallelLinear):
         # NOTE (Bob): hardcode for now
         tp_size = 1
         assert all(output_size % tp_size == 0 for output_size in output_sizes)
+        if params_dtype is None:
+            params_dtype = jnp.bfloat16
         super().__init__(input_size=input_size,
                          output_size=sum(output_sizes),
                          bias=bias,
@@ -730,7 +733,7 @@ class MergedColumnParallelLinear(ColumnParallelLinear):
                     "the same for all partitions.")
 
         assert param_data.shape == loaded_weight.shape
-        loaded_weight = loaded_weight.astype(jnp.float32)
+        # loaded_weight = loaded_weight.astype(jnp.float32)
         param['weight'].value = jax.lax.dynamic_update_slice(param['weight'].value, loaded_weight, (shard_offset, 0))
 
     def _load_fused_module_from_checkpoint(self, param: BasevLLMParameter,
@@ -876,6 +879,9 @@ class QKVParallelLinear(ColumnParallelLinear):
             self.num_kv_heads * self.head_size * tp_size,  # k_proj
             self.num_kv_heads * self.head_size * tp_size,  # v_proj 
         ]
+
+        if params_dtype is None:
+            params_dtype = jnp.bfloat16
 
         super().__init__(input_size=input_size,
                          output_size=output_size,
@@ -1172,7 +1178,7 @@ class QKVParallelLinear(ColumnParallelLinear):
                     "for all partitions.")
 
         # assert param_data.shape == loaded_weight.shape
-        loaded_weight = loaded_weight.astype(jnp.float32)
+        # loaded_weight = loaded_weight.astype(jnp.float32)
         if suffix == 'bias':
             param[suffix].value = jax.lax.dynamic_update_slice(param[suffix].value, loaded_weight, (shard_offset,))
         elif suffix == 'weight':
@@ -1231,6 +1237,9 @@ class RowParallelLinear(LinearBase):
         self.input_size_per_partition = divide(input_size, self.tp_size)
         self.output_size_per_partition = output_size
         self.output_partition_sizes = [output_size]
+
+        if params_dtype is None:
+            params_dtype = jnp.bfloat16
 
         super().__init__(input_size,
                          output_size,

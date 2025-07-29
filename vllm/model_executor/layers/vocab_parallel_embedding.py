@@ -254,7 +254,8 @@ class VocabParallelEmbedding(nnx.Module):
         self.quant_method: QuantizeMethodBase = quant_method
 
         if params_dtype is None:
-            params_dtype = jnp.float32
+            # this is the default!!
+            params_dtype = jnp.bfloat16
         # Divide the weight matrix along the vocaburaly dimension.
         self.num_added_embeddings = self.num_embeddings - self.org_vocab_size
         self.num_embeddings_per_partition = divide(self.num_embeddings_padded,
@@ -361,6 +362,8 @@ class VocabParallelEmbedding(nnx.Module):
         output_dim = getattr(param, "output_dim", 0) # Bob: hard coded for now
         packed_dim = getattr(param, "packed_dim", None)
 
+        assert loaded_weight.dtype == jnp.bfloat16
+
         # If the parameter is a gguf weight, then load it directly.
         if getattr(param, "is_gguf_weight_type", None):
             assert(False)
@@ -444,6 +447,7 @@ class VocabParallelEmbedding(nnx.Module):
         # NOTE: (Bob): this function now only supports sequential inference
         # NOTE: (Bob): and also not using long
         # NOTE: (Bob): this is a temporary solution, we should fix it later
+        assert self.weight.value.dtype == jnp.bfloat16
         output_parallel = self.weight.value[input_]
         return output_parallel
 
