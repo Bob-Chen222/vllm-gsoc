@@ -56,6 +56,12 @@ class FatreluAndMul(CustomOp):
         return out
 
 
+@jax.jit
+def _silu_and_mul(x: jax.Array):
+    """JAX implementation of silu_and_mul."""
+    d = x.shape[-1] // 2
+    return nnx.silu(x[..., :d]) * x[..., d:]
+
 @CustomOp.register("silu_and_mul")
 class SiluAndMul(CustomOp):
     """An activation function for SwiGLU.
@@ -82,8 +88,7 @@ class SiluAndMul(CustomOp):
     
     def __call__ (self, x: jax.Array) -> jax.Array:
         """JAX implementation equivalent to forward()."""
-        d = x.shape[-1] // 2
-        return nnx.silu(x[..., :d]) * x[..., d:]
+        return _silu_and_mul(x)
 
     def forward_cuda(self, x: torch.Tensor) -> torch.Tensor:
         d = x.shape[-1] // 2
