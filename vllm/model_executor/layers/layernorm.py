@@ -13,6 +13,7 @@ import jax.numpy as jnp
 import vllm.envs as envs
 from vllm.model_executor.custom_op import CustomOp
 from vllm.platforms import current_platform
+import numpy as np
 
 import time
 
@@ -165,6 +166,8 @@ class RMSNorm(CustomOp):
         x: jax.Array,
         residual: jax.Array,
     ) -> tuple[jax.Array, jax.Array]:
+        np.savez("arrays.npz", weight=np.array(self.weight), x=np.array(x), residual=np.array(residual))
+        assert False
         x = x + residual
         residual_out = x
         # Fuse residual add and RMS normalization for fewer intermediate tensors.
