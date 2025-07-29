@@ -207,6 +207,13 @@ class UnquantizedLinearMethod(LinearMethodBase):
 
         res = x @ layer.weight.T + bias
         return res
+    
+
+@jax.jit
+def _apply(weight: jax.Array, x: jax.Array, bias: jax.Array):
+    """Apply the weights in layer to the input tensor."""
+    # use this because this is the best for jax
+    return x @ weight.T + bias
 
 class LinearBase(nnx.Module):
     """Base linear layer.
@@ -506,14 +513,10 @@ class ColumnParallelLinear(LinearBase):
     
     def __call__(self, input_
     ) -> Union[jax.Array, tuple[jax.Array, Optional[Parameter]]]:
-        bias = self.bias
         # Matrix multiply.
         # output_parallel = self.quant_method.apply(self, input_, bias)
-        output_parallel = input_ @self.weight.T + bias
-        # NOTE (Bob): This is a hack for now
-        output = output_parallel
-        output_bias = self.bias
-        return output, output_bias
+        bias = self.bias.value
+        return _apply(self.weight.value, input_, bias), bias
 
 
     def extra_repr(self) -> str:
