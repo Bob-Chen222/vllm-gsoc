@@ -63,6 +63,15 @@ from .utils import (AutoWeightsLoader, PPMissingLayer, extract_layer_index,
                     maybe_prefix, apply_name_forward, apply_name_backward)
 
 
+'''below are experimental helper functions for MLP'''
+@partial(jax.jit, static_argnames=("up", "act", "down"))
+def _mlp_merged(x, up, act, down):
+    """Helper function to compute the MLP in a single operation."""
+    gate_up, _ = up(x)
+    x = act(gate_up)
+    x, _ = down(x)
+    return x
+
 class Qwen2MLP(nnx.Module):
 
     def __init__(
@@ -211,6 +220,7 @@ class Qwen2Attention(nnx.Module):
 
         time_start = time.time()
         attn_output = self.attn(q, k, v, slot_mapping, context_lens, block_tables, query_start_loc, num_seqs)
+        attn_output.block_until_ready()
         time_end = time.time()
         print(f"Attention forward took {time_end - time_start:.4f} seconds")
         output, _ = self.o_proj(attn_output)
@@ -308,8 +318,9 @@ class Qwen2DecoderLayer(nnx.Module):
         time1_start = time.time()
         hidden_states, residual = self.input_layernorm(
             hidden_states, residual)
+        hidden_states.block_until_ready()
         time1_end = time.time()
-        # print(f"LayerNorm time: {time1_end - time1_start:.4f} seconds")
+        print(f"LayerNorm time: {time1_end - time1_start:.4f} seconds")
         time2_start = time.time()
         hidden_states = self.self_attn(
             positions,
@@ -329,13 +340,13 @@ class Qwen2DecoderLayer(nnx.Module):
         hidden_states, residual = self.post_attention_layernorm(
             hidden_states, residual)
         time3_end = time.time()
-        # print(f"post_attention_layernorm time: {time3_end - time3_start:.4f} seconds")
+        print(f"post_attention_layernorm time: {time3_end - time3_start:.4f} seconds")
 
         time4_start = time.time()
         hidden_states = self.mlp(hidden_states)
         hidden_states.block_until_ready()
         time4_end = time.time()
-        # print(f"MLP time: {time4_end - time4_start:.4f} seconds")
+        print(f"MLP time: {time4_end - time4_start:.4f} seconds")
         return hidden_states, residual
     
     

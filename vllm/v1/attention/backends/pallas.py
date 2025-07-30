@@ -251,7 +251,7 @@ class PallasAttentionBackendImpl(AttentionImpl, nnx.Module):
             num_seqs,
         )
         return output
-@jax.jit
+# @jax.jit
 def kernel_wrapper(
         num_heads: int,
         head_size: int,
