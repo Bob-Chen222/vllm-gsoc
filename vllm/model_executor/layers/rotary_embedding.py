@@ -33,6 +33,7 @@ from transformers import PretrainedConfig
 import flax.nnx as nnx
 import jax
 import jax.numpy as jnp
+from functools import partial
 
 from vllm.model_executor.custom_op import CustomOp
 from vllm.platforms import current_platform
@@ -109,6 +110,32 @@ def _apply_rotary_emb(x: torch.Tensor, cos: torch.Tensor, sin: torch.Tensor,
     else:
         return _apply_rotary_emb_torch(x, cos, sin, is_neox_style)
 
+
+@partial(jax.jit, static_argnames=("head_size", "rotary_dim", "is_neox_style"))
+def _rotary_embedding(positions: jax.Array, query: jax.Array, key: Optional[jax.Array],cos_sin_cache,
+                      head_size, rotary_dim,is_neox_style: bool):
+    positions = positions.flatten()
+    num_tokens = positions.shape[0]
+    cos_sin = jnp.take(cos_sin_cache, positions, axis=0)
+    cos, sin = jnp.split(cos_sin, 2, axis=-1)
+
+    query_shape = query.shape
+    query = jnp.reshape(query, (num_tokens, -1, head_size))
+    query_rot = query[..., :rotary_dim]
+    query_pass = query[..., rotary_dim:]
+    query_rot = _apply_rotary_emb_jax(query_rot, cos, sin,
+                                        is_neox_style)
+    query = jnp.reshape(jnp.concatenate([query_rot, query_pass], axis=-1), query_shape)
+
+    # key may be None in some cases, e.g. cross-layer KV sharing
+    key_shape = key.shape
+    key = jnp.reshape(key, (num_tokens, -1, head_size))
+    key_rot = key[..., :rotary_dim]
+    key_pass = key[..., rotary_dim:]
+    key_rot = _apply_rotary_emb_jax(key_rot, cos, sin,
+                                        is_neox_style)
+    key = jnp.reshape(jnp.concatenate([key_rot, key_pass], axis=-1), key_shape)
+    return query, key
 
 @CustomOp.register("rotary_embedding")
 class RotaryEmbedding(CustomOp):
@@ -198,31 +225,8 @@ class RotaryEmbedding(CustomOp):
             key: Optional[jax.Array] = None,
             offsets: Optional[jax.Array] = None,
     ) -> tuple[jax.Array, Optional[jax.Array]]:
-        # time_start = time.time()
-        positions = positions.flatten()
-        num_tokens = positions.shape[0]
-        cos_sin = jnp.take(self.cos_sin_cache.value, positions, axis=0)
-        cos, sin = jnp.split(cos_sin, 2, axis=-1)
-
-        query_shape = query.shape
-        query = jnp.reshape(query, (num_tokens, -1, self.head_size))
-        query_rot = query[..., :self.rotary_dim]
-        query_pass = query[..., self.rotary_dim:]
-        query_rot = _apply_rotary_emb_jax(query_rot, cos, sin,
-                                            self.is_neox_style)
-        query = jnp.reshape(jnp.concatenate([query_rot, query_pass], axis=-1), query_shape)
-
-        # key may be None in some cases, e.g. cross-layer KV sharing
-        key_shape = key.shape
-        key = jnp.reshape(key, (num_tokens, -1, self.head_size))
-        key_rot = key[..., :self.rotary_dim]
-        key_pass = key[..., self.rotary_dim:]
-        key_rot = _apply_rotary_emb_jax(key_rot, cos, sin,
-                                            self.is_neox_style)
-        key = jnp.reshape(jnp.concatenate([key_rot, key_pass], axis=-1), key_shape)
-        # time_end = time.time()
-        # print(f"RotaryEmbedding forward took {time_end - time_start:.4f} seconds")
-        return query, key
+        return _rotary_embedding(
+            positions, query, key, self.cos_sin_cache.value, self.head_size, self.rotary_dim, self.is_neox_style)
 
     def forward_cuda(
         self,

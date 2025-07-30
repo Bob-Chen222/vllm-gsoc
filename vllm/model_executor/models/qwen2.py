@@ -202,9 +202,17 @@ class Qwen2Attention(nnx.Module):
         q = qkv[..., :q_size]
         k = qkv[..., q_size:q_size + kv_size]
         v = qkv[..., q_size + kv_size:]
-        
+
+        time_start = time.time()
         q, k = self.rotary_emb(positions, q, k)
+        q.block_until_ready()
+        time_end = time.time()
+        print(f"RotaryEmbedding forward took {time_end - time_start:.4f} seconds")
+
+        time_start = time.time()
         attn_output = self.attn(q, k, v, slot_mapping, context_lens, block_tables, query_start_loc, num_seqs)
+        time_end = time.time()
+        print(f"Attention forward took {time_end - time_start:.4f} seconds")
         output, _ = self.o_proj(attn_output)
         return output
         
@@ -312,8 +320,9 @@ class Qwen2DecoderLayer(nnx.Module):
             query_start_loc,
             num_seqs,
         )
+        hidden_states.block_until_ready()
         time2_end = time.time()
-        # print(f"Self Attention time: {time2_end - time2_start:.4f} seconds")
+        print(f"Self Attention time: {time2_end - time2_start:.4f} seconds")
 
         # Fully Connected
         time3_start = time.time()
@@ -326,7 +335,7 @@ class Qwen2DecoderLayer(nnx.Module):
         hidden_states = self.mlp(hidden_states)
         hidden_states.block_until_ready()
         time4_end = time.time()
-        print(f"MLP time: {time4_end - time4_start:.4f} seconds")
+        # print(f"MLP time: {time4_end - time4_start:.4f} seconds")
         return hidden_states, residual
     
     
