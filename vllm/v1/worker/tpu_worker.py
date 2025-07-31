@@ -2,7 +2,7 @@
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 """A TPU worker class."""
 import os
-from typing import Optional
+from typing import Any, Optional
 
 import torch
 import torch.distributed
@@ -16,19 +16,25 @@ import jax.numpy as jnp
 import flax.nnx as nnx
 
 import vllm.envs as envs
-from vllm.config import ParallelConfig, VllmConfig
+from vllm.config import VllmConfig
 from vllm.distributed import (ensure_model_parallel_initialized,
                               init_distributed_environment)
+from vllm.distributed.kv_transfer import (ensure_kv_transfer_initialized,
+                                          has_kv_transfer_group)
 from vllm.logger import init_logger
 from vllm.lora.request import LoRARequest
 from vllm.model_executor import set_random_seed
-from vllm.utils import STR_DTYPE_TO_TORCH_DTYPE
+from vllm.platforms import current_platform
+from vllm.tasks import SupportedTask
+from vllm.utils import STR_DTYPE_TO_TORCH_DTYPE, cdiv
+from vllm.v1.attention.backends.pallas import TPU_HEAD_SIZE_ALIGNMENT
 from vllm.v1.core.sched.output import SchedulerOutput
 from vllm.v1.kv_cache_interface import (AttentionSpec, KVCacheConfig,
                                         KVCacheSpec)
 from vllm.v1.outputs import ModelRunnerOutput
-from vllm.v1.utils import bind_kv_cache, report_usage_stats
+from vllm.v1.utils import report_usage_stats
 from vllm.v1.worker.tpu_model_runner import TPUModelRunner
+from vllm.v1.worker.utils import bind_kv_cache
 
 logger = init_logger(__name__)
 
@@ -62,7 +68,6 @@ class TPUWorker:
         self.scheduler_config = vllm_config.scheduler_config
         self.device_config = vllm_config.device_config
         self.speculative_config = vllm_config.speculative_config
-        self.prompt_adapter_config = vllm_config.prompt_adapter_config
         self.observability_config = vllm_config.observability_config
 
         self.parallel_config.rank = rank
@@ -97,6 +102,11 @@ class TPUWorker:
         if self.model_config.seed is None:
             self.model_config.seed = 0
 
+    def initialize_cache(self, num_gpu_blocks: int,
+                         num_cpu_blocks: int) -> None:
+        self.cache_config.num_gpu_blocks = num_gpu_blocks
+        self.cache_config.num_cpu_blocks = num_cpu_blocks
+
     def init_device(self):
         os.environ["PJRT_DEVICE"] = "TPU"
         # Note: Currently the XLA compiler wrongly uses 2D ring strategy on 1D
@@ -105,13 +115,16 @@ class TPUWorker:
         # fix this. It will be removed after the bug in XLA compiler is fixed.
         os.environ["LIBTPU_INIT_ARGS"] = (
             os.environ.get("LIBTPU_INIT_ARGS", "") +
-            " --xla_tpu_force_1d_allreduce_at_chunk_count=1")
+            " --xla_tpu_force_1d_allreduce_at_chunk_count=1"
+            " --xla_jf_conv_input_fusion=False")
+        # --xla_jf_conv_input_fusion=False is used to improve the perf of
+        # quantized matmul.
         # torch.set_grad_enabled(False)
         # torch.set_default_dtype(self.model_config.dtype)
 
         # Initialize the distributed environment.
         self._init_tpu_worker_distributed_environment(
-            self.parallel_config, self.rank, self.distributed_init_method,
+            self.vllm_config, self.rank, self.distributed_init_method,
             self.local_rank)
 
         # Device initialization should happen after initializing
@@ -178,8 +191,8 @@ class TPUWorker:
             runner_kv_caches)
 
         # `max_num_tokens >= max_num_batched_tokens` due to padding.
-        # with self.model_runner.maybe_setup_dummy_loras(self.lora_config):
-        #     self.model_runner.profile_run(self.model_runner.max_num_tokens)
+        with self.model_runner.maybe_setup_dummy_loras(self.lora_config):
+            self.model_runner.profile_run(self.model_runner.max_num_tokens)
 
         # # Synchronize before measuring the memory usage.
         # xm.wait_device_ops()
@@ -196,37 +209,43 @@ class TPUWorker:
 
         # # Get the maximum amount of memory used by the model weights and
         # # intermediate activations.
-        # if self.use_spmd:
-        #     # This is a workaround for the TPU SPMD mode. The get_memory_info
-        #     # API doesn't work with SPMD mode in PyTorch/XLA.
-        #     # TODO: use xm.get_memory_info for SPMD once it's supported in
-        #     # PyTorch/XLA.
-        #     assert False, "not used for now"
-        #     import tpu_info
-        #     chip_type, _ = tpu_info.device.get_local_chips()
-        #     device_usage = tpu_info.metrics.get_chip_usage(chip_type)
-        #     total_memory_size = device_usage[0].total_memory
-        #     current_mem = device_usage[0].memory_usage
-        # else:
-        #     m = xm.get_memory_info(self.device)
-        #     total_memory_size = m["bytes_limit"]
-        #     current_mem = m["bytes_used"]
-        # # Ideally we would use profiled = m["peak_bytes_used"] to
-        # # get weights + activations. But there is memory used during
-        # # compilation / weight loading that impacts the peak and
-        # # there is no way to reset peak memory in XLA, So we
-        # # use the heuristic of 2% of weights.
-        # profiled = current_mem * 1.02
+        if self.use_spmd:
+            # This is a workaround for the TPU SPMD mode. The get_memory_info
+            # API doesn't work with SPMD mode in PyTorch/XLA.
+            # TODO: use xm.get_memory_info for SPMD once it's supported in
+            # PyTorch/XLA.
+            assert False, "not used for now"
+            import tpu_info
+            chip_type, _ = tpu_info.device.get_local_chips()
+            device_usage = tpu_info.metrics.get_chip_usage(chip_type)
+            total_memory_size = device_usage[0].total_memory
+            current_mem = device_usage[0].memory_usage
+        else:
+            m = xm.get_memory_info(self.device)
+            total_memory_size = m["bytes_limit"]
+            current_mem = m["bytes_used"]
+        # Ideally we would use profiled = m["peak_bytes_used"] to
+        # get weights + activations. But there is memory used during
+        # compilation / weight loading that impacts the peak and
+        # there is no way to reset peak memory in XLA, So we
+        # use the heuristic of 2% of weights.
+        profiled = current_mem * 1.02
 
-        # # Calculate the TPU KV cache size based on profiling.
-        # usable_memory_size = int(total_memory_size *
-        #                          self.cache_config.gpu_memory_utilization)
-        # tpu_kv_cache_bytes = max(usable_memory_size - profiled, 0)
-        # NOTE(Bob): hardcoded!!!!!!!
-        tpu_kv_cache_bytes = 27505662873
-        # let's try one third
-        tpu_kv_cache_bytes //= 4
-
+        # Calculate the TPU KV cache size based on profiling.
+        usable_memory_size = int(total_memory_size *
+                                 self.cache_config.gpu_memory_utilization)
+        tpu_kv_cache_bytes = max(usable_memory_size - profiled, 0)
+        head_size = self.model_config.get_head_size()
+        if head_size > 0:
+            padded_head_size = cdiv(
+                head_size, TPU_HEAD_SIZE_ALIGNMENT) * TPU_HEAD_SIZE_ALIGNMENT
+            if padded_head_size != head_size:
+                logger.warning_once("head size is padded to %d",
+                                    padded_head_size)
+            # We adjust the usable memory size for the KV cache to prevent OOM
+            # errors, even after padding the head_size.
+            tpu_kv_cache_bytes = (tpu_kv_cache_bytes * head_size //
+                                  padded_head_size)
         return int(tpu_kv_cache_bytes)
 
     def execute_model(
@@ -234,7 +253,9 @@ class TPUWorker:
         scheduler_output: "SchedulerOutput",
     ) -> Optional[ModelRunnerOutput]:
         output = self.model_runner.execute_model(scheduler_output)
-        return output if self.is_driver_worker else None
+        # every worker's output is needed when kv_transfer_group is setup
+        return output if self.is_driver_worker or has_kv_transfer_group(
+        ) else None
 
     def profile(self, is_start: bool = True):
         if self.rank < 1:
@@ -255,6 +276,12 @@ class TPUWorker:
     def load_model(self) -> None:
         self.model_runner.load_model()
 
+    def update_config(self, overrides: dict[str, Any]) -> None:
+        self.model_runner.update_config(overrides)
+
+    def reload_weights(self) -> None:
+        self.model_runner.reload_weights()
+
     def compile_or_warm_up_model(self) -> None:
         if not self.model_config.enforce_eager:
             self.model_runner.capture_model()
@@ -265,6 +292,9 @@ class TPUWorker:
 
     def get_model(self) -> nnx.Module:
         return self.model_runner.get_model()
+
+    def get_supported_tasks(self) -> tuple[SupportedTask, ...]:
+        return self.model_runner.get_supported_tasks()
 
     def get_kv_cache_spec(self) -> dict[str, KVCacheSpec]:
         return self.model_runner.get_kv_cache_spec()
@@ -279,7 +309,7 @@ class TPUWorker:
 
     def _init_tpu_worker_distributed_environment(
         self,
-        parallel_config: ParallelConfig,
+        vllm_config: VllmConfig,
         rank: int,
         distributed_init_method: Optional[str] = None,
         local_rank: int = -1,
@@ -291,16 +321,19 @@ class TPUWorker:
         # the input objects on CPU. The all-reduce and all-gather ops on TPU
         # are invoked by `xm.all_reduce` and `xm.all_gather` which use their
         # own context.
+        parallel_config = vllm_config.parallel_config
         init_distributed_environment(
             world_size=parallel_config.world_size,
             rank=rank,
             local_rank=local_rank,
             distributed_init_method=distributed_init_method,
-            backend="gloo",
+            backend=current_platform.dist_backend,
         )
         ensure_model_parallel_initialized(
             parallel_config.tensor_parallel_size,
             parallel_config.pipeline_parallel_size)
+
+        ensure_kv_transfer_initialized(vllm_config)
 
 
 try:

@@ -10,8 +10,11 @@ import jax
 import jax as jnp
 
 from vllm.config import LoadConfig, ModelConfig, VllmConfig
+from vllm.logger import init_logger
 from vllm.model_executor.model_loader.utils import (
     initialize_model, process_weights_after_loading, set_default_torch_dtype)
+
+logger = init_logger(__name__)
 
 
 class BaseModelLoader(ABC):

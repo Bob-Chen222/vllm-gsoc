@@ -63,12 +63,13 @@ class LogitsProcessor(nnx.Module):
         hidden_states: jax.Array,
         sampling_metadata: Optional[SamplingMetadata] = None,
         embedding_bias: Optional[jax.Array] = None,
+        prune_hidden_states: bool = True,
     ) -> Optional[jax.Array]:
         assert SamplingMetadata is not None
         if self.logits_as_input:
             logits = hidden_states
         else:
-            if sampling_metadata is not None:
+            if sampling_metadata is not None and prune_hidden_states:
                 assert False, "Sampling metadata is not supported for JAX"
                 hidden_states = _prune_hidden_states(hidden_states,
                                                      sampling_metadata)

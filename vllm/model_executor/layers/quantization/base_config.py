@@ -14,6 +14,7 @@ import jax.numpy as jnp
 
 if TYPE_CHECKING:
     from vllm.model_executor.layers.quantization import QuantizationMethods
+    from vllm.model_executor.models.utils import WeightsMapper
 else:
     QuantizationMethods = str
 
@@ -153,3 +154,15 @@ class QuantizationConfig(ABC):
 
     def get_cache_scale(self, name: str) -> Optional[str]:
         return None
+
+    def apply_vllm_mapper(  # noqa: B027
+            self, hf_to_vllm_mapper: "WeightsMapper"):
+        """
+        Interface for models to update module names referenced in
+        quantization configs in order to reflect the vllm model structure
+
+        :param hf_to_vllm_mapper: maps from hf model structure (the assumed
+            structure of the qconfig) to vllm model structure
+        """
+        # TODO (@kylesayrs): add implementations for all subclasses
+        pass
