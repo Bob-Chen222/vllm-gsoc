@@ -17,6 +17,7 @@ from jax.experimental.pallas.ops.tpu.ragged_paged_attention.kernel import ragged
 
 from vllm.attention.backends.abstract import (AttentionBackend, AttentionImpl,
                                               AttentionLayer, AttentionType)
+from vllm.attention.ops.pallas_kv_cache_update import kv_cache_update
 from vllm.attention.backends.utils import CommonAttentionState
 from vllm.config import VllmConfig
 from vllm.logger import init_logger
@@ -134,7 +135,7 @@ class PallasMetadata:
     query_start_loc: jax.Array
     num_seqs: jax.Array
     num_kv_update_slices: jax.Array
-    num_slices_per_kv_cache_update_block: 
+    num_slices_per_kv_cache_update_block: int
 
 
 class PallasAttentionBackendImpl(AttentionImpl, nnx.Module):
@@ -396,70 +397,72 @@ def write_to_kv_cache(
     head_size = cdiv(head_size,
                      TPU_HEAD_SIZE_ALIGNMENT) * TPU_HEAD_SIZE_ALIGNMENT
     
-    key = jnp.reshape(key, (-1, num_kv_heads, head_size))
-    value = jnp.reshape(value, (-1, num_kv_heads, head_size))
+    key = jnp.reshape(key, (-1, num_combined_kv_heads, head_size))
+    value = jnp.reshape(value, (-1, num_combined_kv_heads, head_size))
 
-    if kv_cache_quantized_dtype is not None:
-        dtype_info = torch.finfo(kv_cache_quantized_dtype)
-        key = key.to(torch.float32) / k_scale
-        # NOTE: clamp is added here to avoid out of range of quantized dtype
-        key = torch.clamp(key, dtype_info.min, dtype_info.max)
-        key = key.to(kv_cache_quantized_dtype)
-        value = value.to(torch.float32) / v_scale
-        value = torch.clamp(value, dtype_info.min, dtype_info.max)
-        value = value.to(kv_cache_quantized_dtype)
+    # if kv_cache_quantized_dtype is not None:
+    #     dtype_info = torch.finfo(kv_cache_quantized_dtype)
+    #     key = key.to(torch.float32) / k_scale
+    #     # NOTE: clamp is added here to avoid out of range of quantized dtype
+    #     key = torch.clamp(key, dtype_info.min, dtype_info.max)
+    #     key = key.to(kv_cache_quantized_dtype)
+    #     value = value.to(torch.float32) / v_scale
+    #     value = torch.clamp(value, dtype_info.min, dtype_info.max)
+    #     value = value.to(kv_cache_quantized_dtype)
 
     kv = jnp.concatenate([key, value], axis=-1).reshape(-1, num_combined_kv_heads,
                                                   head_size)
 
     # torch.ops.xla.dynamo_set_buffer_donor_(kv_cache, True)
 
-    kv_cache = kv_cache.flatten(0, 1)
-    new_kv_cache = torch.ops.xla.kv_cache_update_op(
+    original_shape = kv_cache.shape
+    kv_cache_flat = kv_cache.reshape((-1,) + kv_cache.shape[2:])
+    kv_cache_flat = kv_cache_update(
         kv, slot_mapping, kv_cache, num_kv_update_slices, page_size,
         num_slices_per_kv_cache_update_block)
     # NOTE: the in-place copy will be optimized away by XLA compiler.
-    kv_cache.copy_(new_kv_cache)
+    # kv_cache.copy_(new_kv_cache)
+    return kv_cache_flat.reshape(original_shape)
 
 
-@requires_jax
-def kv_cache_update_op_impl(kv: torch.Tensor, slot_mapping: torch.Tensor,
-                            kv_cache: torch.Tensor,
-                            num_kv_update_slices: torch.Tensor, page_size: int,
-                            num_slices_per_block: int):
-    from vllm.attention.ops.pallas_kv_cache_update import kv_cache_update
-    new_kv_cache = xb.call_jax(
-        kv_cache_update, (kv, slot_mapping, kv_cache, num_kv_update_slices), {
-            "page_size": page_size,
-            "num_slices_per_block": num_slices_per_block
-        })
-    return new_kv_cache
+# @requires_jax
+# def kv_cache_update_op_impl(kv: torch.Tensor, slot_mapping: torch.Tensor,
+#                             kv_cache: torch.Tensor,
+#                             num_kv_update_slices: torch.Tensor, page_size: int,
+#                             num_slices_per_block: int):
+#     from vllm.attention.ops.pallas_kv_cache_update import kv_cache_update
+#     new_kv_cache = xb.call_jax(
+#         kv_cache_update, (kv, slot_mapping, kv_cache, num_kv_update_slices), {
+#             "page_size": page_size,
+#             "num_slices_per_block": num_slices_per_block
+#         })
+#     return new_kv_cache
 
 
-XLA_LIB.define(
-    "kv_cache_update_op(Tensor kv, Tensor slot_mapping, Tensor kv_cache," \
-    "Tensor num_kv_update_slices, int page_size, int num_slices_per_block)" \
-    "-> Tensor", )
+# XLA_LIB.define(
+#     "kv_cache_update_op(Tensor kv, Tensor slot_mapping, Tensor kv_cache," \
+#     "Tensor num_kv_update_slices, int page_size, int num_slices_per_block)" \
+#     "-> Tensor", )
 
 
-@impl(XLA_LIB, "kv_cache_update_op", "XLA")
-def kv_cache_update_op_xla(kv: torch.Tensor, slot_mapping: torch.Tensor,
-                           kv_cache: torch.Tensor,
-                           num_kv_update_slices: torch.Tensor, page_size: int,
-                           num_slices_per_block: int) -> torch.Tensor:
-    new_kv_cache = kv_cache_update_op_impl(kv, slot_mapping, kv_cache,
-                                           num_kv_update_slices, page_size,
-                                           num_slices_per_block)
-    return new_kv_cache
+# @impl(XLA_LIB, "kv_cache_update_op", "XLA")
+# def kv_cache_update_op_xla(kv: torch.Tensor, slot_mapping: torch.Tensor,
+#                            kv_cache: torch.Tensor,
+#                            num_kv_update_slices: torch.Tensor, page_size: int,
+#                            num_slices_per_block: int) -> torch.Tensor:
+#     new_kv_cache = kv_cache_update_op_impl(kv, slot_mapping, kv_cache,
+#                                            num_kv_update_slices, page_size,
+#                                            num_slices_per_block)
+#     return new_kv_cache
 
 
-@impl(XLA_LIB, "kv_cache_update_op", "CompositeExplicitAutograd")
-def kv_cache_update_op_non_xla(kv: torch.Tensor, slot_mapping: torch.Tensor,
-                               kv_cache: torch.Tensor,
-                               num_kv_update_slices: torch.Tensor,
-                               page_size: int,
-                               num_slices_per_block: int) -> torch.Tensor:
-    return kv_cache
+# @impl(XLA_LIB, "kv_cache_update_op", "CompositeExplicitAutograd")
+# def kv_cache_update_op_non_xla(kv: torch.Tensor, slot_mapping: torch.Tensor,
+#                                kv_cache: torch.Tensor,
+#                                num_kv_update_slices: torch.Tensor,
+#                                page_size: int,
+#                                num_slices_per_block: int) -> torch.Tensor:
+#     return kv_cache
 
 
 # We can move this function to a common utils file if it's also useful for other
@@ -500,7 +503,7 @@ def get_dtype_packing(dtype):
 
 
 def get_page_size_bytes(block_size: int, num_kv_heads: int, head_size: int,
-                        kv_cache_dtype: torch.dtype) -> int:
+                        kv_cache_dtype: jnp.dtype) -> int:
     """Returns the size in bytes of one page of the KV cache."""
     padded_head_size = cdiv(head_size,
                             TPU_HEAD_SIZE_ALIGNMENT) * TPU_HEAD_SIZE_ALIGNMENT

@@ -1015,7 +1015,9 @@ def init_distributed_environment(
     if _WORLD is None:
         ranks = list(range(jax.process_count()))
         _WORLD = init_world_group(ranks, local_rank, backend)
-        _NODE_COUNT = _node_count(_WORLD.cpu_group)
+
+        # NOTE(Bob): hack
+        _NODE_COUNT = 1
         logger.debug("Detected %d nodes in the distributed environment",
                      _NODE_COUNT)
     else:

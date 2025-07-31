@@ -122,12 +122,13 @@ class TpuPlatform(Platform):
         assert vllm_config.speculative_config is None, \
             "TPU does not support speculative decoding"
 
+        model_config = vllm_config.model_config
         # if vllm_config.model_config.dtype in (torch.float16, torch.float32):
         #     logger.warning(
         #         "The TPU backend currently does not support %s. "
         #         "Using bfloat16 instead.", vllm_config.model_config.dtype)
         #     vllm_config.model_config.dtype = torch.bfloat16
-        vllm_config.model_config.dtype = jnp.bfloat16
+        model_config.dtype = jnp.bfloat16
 
         from vllm.v1.attention.backends.pallas import PallasAttentionBackend
         cache_config.block_size = PallasAttentionBackend.get_page_size(
