@@ -63,15 +63,6 @@ from .utils import (AutoWeightsLoader, PPMissingLayer, extract_layer_index,
                     maybe_prefix, apply_name_forward, apply_name_backward)
 
 
-'''below are experimental helper functions for MLP'''
-@partial(jax.jit, static_argnames=("up", "act", "down"))
-def _mlp_merged(x, up, act, down):
-    """Helper function to compute the MLP in a single operation."""
-    gate_up, _ = up(x)
-    x = act(gate_up)
-    x, _ = down(x)
-    return x
-
 class Qwen2MLP(nnx.Module):
 
     def __init__(
@@ -82,7 +73,6 @@ class Qwen2MLP(nnx.Module):
         quant_config: Optional[QuantizationConfig] = None,
         prefix: str = "",
     ) -> None:
-        super().__init__()
         self.gate_up_proj = MergedColumnParallelLinear(
             hidden_size,
             [intermediate_size] * 2,
@@ -206,23 +196,11 @@ class Qwen2Attention(nnx.Module):
     ) -> jax.Array:
         qkv, _ = self.qkv_proj(hidden_states)
         
-        q_size = self.q_size
-        kv_size = self.kv_size
-        q = qkv[..., :q_size]
-        k = qkv[..., q_size:q_size + kv_size]
-        v = qkv[..., q_size + kv_size:]
+        q, k, v = jnp.split(qkv, [self.q_size, self.q_size + self.kv_size], axis=-1)
 
-        time_start = time.time()
         q, k = self.rotary_emb(positions, q, k)
-        q.block_until_ready()
-        time_end = time.time()
-        print(f"RotaryEmbedding forward took {time_end - time_start:.4f} seconds")
 
-        time_start = time.time()
         attn_output = self.attn(q, k, v, slot_mapping, context_lens, block_tables, query_start_loc, num_seqs)
-        attn_output.block_until_ready()
-        time_end = time.time()
-        print(f"Attention forward took {time_end - time_start:.4f} seconds")
         output, _ = self.o_proj(attn_output)
         return output
         
@@ -315,13 +293,9 @@ class Qwen2DecoderLayer(nnx.Module):
         query_start_loc: jax.Array,
         num_seqs: jax.Array,
     ) -> tuple[jax.Array, jax.Array]:
-        time1_start = time.time()
         hidden_states, residual = self.input_layernorm(
             hidden_states, residual)
-        hidden_states.block_until_ready()
-        time1_end = time.time()
-        print(f"LayerNorm time: {time1_end - time1_start:.4f} seconds")
-        time2_start = time.time()
+        
         hidden_states = self.self_attn(
             positions,
             hidden_states,
@@ -331,36 +305,14 @@ class Qwen2DecoderLayer(nnx.Module):
             query_start_loc,
             num_seqs,
         )
-        hidden_states.block_until_ready()
-        time2_end = time.time()
-        print(f"Self Attention time: {time2_end - time2_start:.4f} seconds")
 
         # Fully Connected
-        time3_start = time.time()
         hidden_states, residual = self.post_attention_layernorm(
             hidden_states, residual)
-        time3_end = time.time()
-        print(f"post_attention_layernorm time: {time3_end - time3_start:.4f} seconds")
 
-        time4_start = time.time()
         hidden_states = self.mlp(hidden_states)
-        hidden_states.block_until_ready()
-        time4_end = time.time()
-        print(f"MLP time: {time4_end - time4_start:.4f} seconds")
         return hidden_states, residual
     
-    
-
-
-# @support_torch_compile(
-#     dynamic_arg_dims={
-#         "input_ids": 0,
-#         # positions is of shape (3, seq_len) if mrope is enabled for qwen2-vl,
-#         # otherwise (seq_len, ).
-#         "positions": -1,
-#         "intermediate_tensors": 0,
-#         "inputs_embeds": 0,
-#     })
 class Qwen2Model(nnx.Module):
 
     def __init__(self,
@@ -473,7 +425,6 @@ class Qwen2Model(nnx.Module):
         # NOTE (Bob): this is a hack for now, I just disabled lora and ppsupport and everything is simpilfied
         hidden_states = self.get_input_embeddings(input_ids)
         residual = hidden_states
-        print("start of round")
         for layer in self.layers[self.start_layer:self.end_layer]:
             hidden_states, residual = layer(
                 positions,
@@ -485,8 +436,6 @@ class Qwen2Model(nnx.Module):
                 self.query_start_loc,
                 self.num_seqs,
             )
-        print("end of round")
-        # assert False
         hidden_states, _ = self.norm(hidden_states, residual)
         return hidden_states
 

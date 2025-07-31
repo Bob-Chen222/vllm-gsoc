@@ -864,10 +864,8 @@ class TPUModelRunner(LoRAModelRunnerMixin):
                 positions=self.position_ids,
                 # inputs_embeds=inputs_embeds,
             )
-            print("input_ids shape:", input_ids.shape)
-            print("positions shape:", self.position_ids.shape)
         time_model_end = time.time()
-        print(f"forward: {time_model_end - time_model_start:.2f} seconds")
+        print(f"forward: {time_model_end - time_model_start:.6f} seconds")
         
         # assert False, "still have error in forward"
         hidden_states = self.select_hidden_states(hidden_states,
@@ -971,7 +969,7 @@ class TPUModelRunner(LoRAModelRunnerMixin):
         self._verify_num_xla_graphs("execute_model")
 
         time_end = time.time()
-        print(f"execute_model time: {time_end - time_start:.2f} seconds")
+        print(f"execute_model time: {time_end - time_start:.6f} seconds")
         self.count += 1
         return model_runner_output
 

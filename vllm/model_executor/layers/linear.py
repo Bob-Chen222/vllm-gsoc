@@ -239,8 +239,6 @@ class LinearBase(nnx.Module):
         *,
         return_bias: bool = True,
     ):
-        # super().__init__()
-
         # Keep input parameters
         self.input_size = input_size
         self.output_size = output_size

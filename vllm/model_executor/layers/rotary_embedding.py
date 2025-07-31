@@ -80,7 +80,6 @@ def _apply_rotary_emb_jax(
     x: jnp.ndarray,
     cos: jnp.ndarray,
     sin: jnp.ndarray,
-    is_neox_style: bool,
 ) -> jnp.ndarray:
     cos = jnp.expand_dims(cos, axis=-2).astype(x.dtype)
     sin = jnp.expand_dims(sin, axis=-2).astype(x.dtype)
@@ -111,9 +110,9 @@ def _apply_rotary_emb(x: torch.Tensor, cos: torch.Tensor, sin: torch.Tensor,
         return _apply_rotary_emb_torch(x, cos, sin, is_neox_style)
 
 
-@partial(jax.jit, static_argnames=("head_size", "rotary_dim", "is_neox_style"))
+@partial(jax.jit, static_argnames=("head_size", "rotary_dim"))
 def _rotary_embedding(positions: jax.Array, query: jax.Array, key: Optional[jax.Array],cos_sin_cache,
-                      head_size, rotary_dim,is_neox_style: bool):
+                      head_size, rotary_dim):
     positions = positions.flatten()
     num_tokens = positions.shape[0]
     cos_sin = jnp.take(cos_sin_cache, positions, axis=0)
@@ -123,8 +122,7 @@ def _rotary_embedding(positions: jax.Array, query: jax.Array, key: Optional[jax.
     query = jnp.reshape(query, (num_tokens, -1, head_size))
     query_rot = query[..., :rotary_dim]
     query_pass = query[..., rotary_dim:]
-    query_rot = _apply_rotary_emb_jax(query_rot, cos, sin,
-                                        is_neox_style)
+    query_rot = _apply_rotary_emb_jax(query_rot, cos, sin)
     query = jnp.reshape(jnp.concatenate([query_rot, query_pass], axis=-1), query_shape)
 
     # key may be None in some cases, e.g. cross-layer KV sharing
@@ -132,8 +130,7 @@ def _rotary_embedding(positions: jax.Array, query: jax.Array, key: Optional[jax.
     key = jnp.reshape(key, (num_tokens, -1, head_size))
     key_rot = key[..., :rotary_dim]
     key_pass = key[..., rotary_dim:]
-    key_rot = _apply_rotary_emb_jax(key_rot, cos, sin,
-                                        is_neox_style)
+    key_rot = _apply_rotary_emb_jax(key_rot, cos, sin)
     key = jnp.reshape(jnp.concatenate([key_rot, key_pass], axis=-1), key_shape)
     return query, key
 
@@ -226,7 +223,7 @@ class RotaryEmbedding(CustomOp):
             offsets: Optional[jax.Array] = None,
     ) -> tuple[jax.Array, Optional[jax.Array]]:
         return _rotary_embedding(
-            positions, query, key, self.cos_sin_cache.value, self.head_size, self.rotary_dim, self.is_neox_style)
+            positions, query, key, self.cos_sin_cache.value, self.head_size, self.rotary_dim)
 
     def forward_cuda(
         self,

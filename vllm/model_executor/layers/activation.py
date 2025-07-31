@@ -60,7 +60,7 @@ class FatreluAndMul(CustomOp):
 def _silu_and_mul(x: jax.Array):
     """JAX implementation of silu_and_mul."""
     d = x.shape[-1] // 2
-    return nnx.silu(x[..., :d]) * x[..., d:]
+    return jax.nn.silu(x[..., :d]) * x[..., d:]
 
 @CustomOp.register("silu_and_mul")
 class SiluAndMul(CustomOp):
