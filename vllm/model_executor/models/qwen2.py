@@ -598,9 +598,9 @@ class Qwen2ForCausalLM(nnx.Module):
         hidden_states: jax.Array,
         sampling_metadata: SamplingMetadata,
     ) -> Optional[jax.Array]:
-        logits = self.logits_processor(self.lm_head, hidden_states,
+        return self.logits_processor(self.lm_head, hidden_states,
                                        sampling_metadata)
-        return logits
+
 
     def load_weights(self, weights: Iterable[tuple[str,
                                                    jax.Array]]) -> set[str]:

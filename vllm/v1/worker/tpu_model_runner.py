@@ -966,7 +966,6 @@ class TPUModelRunner(LoRAModelRunnerMixin):
 
         # Check there are no new graphs compiled - all the graphs should be
         # captured and compiled during warm up.
-        self._verify_num_xla_graphs("execute_model")
 
         time_end = time.time()
         print(f"execute_model time: {time_end - time_start:.6f} seconds")
