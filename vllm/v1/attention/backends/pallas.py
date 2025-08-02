@@ -303,7 +303,8 @@ class PallasAttentionBackendImpl(AttentionImpl, nnx.Module):
         )
         return output
 
-# @jax.jit
+@partial(jax.jit, static_argnames=["num_heads", "head_size","sm_scale", "sliding_window",
+                          "logits_soft_cap", "num_slices_per_kv_cache_update_block"])
 def kernel_wrapper(
         num_heads: int,
         head_size: int,
@@ -336,21 +337,21 @@ def kernel_wrapper(
             shape = [num_tokens, num_heads * head_size]
         """
         # For determine_available_memory case.
-    if jnp.size(kv_cache.value[0]) == 0:
-        if output is None:
-            output = jnp.ones_like(query)
-        return output
+    # if jnp.size(kv_cache.value[0]) == 0:
+    #     if output is None:
+    #         output = jnp.ones_like(query)
+    #     return output
 
     num_tokens, hidden_size = query.shape
     query = jnp.reshape(query, (num_tokens, num_heads, head_size))
 
     # NOTE(Bob): because of the fact that we are currently using the attention_jax, it helps to manage the kvcache
-    if jnp.size(kv_cache.value[0]) > 0:
-        assert kv_sharing_target_layer_name is None
+    # if jnp.size(kv_cache.value[0]) > 0:
+    #     assert kv_sharing_target_layer_name is None
         # Write input keys and values to the KV cache.
         # Skip this if sharing KV cache with an earlier attention layer.
-    kv_cache.value = write_to_kv_cache(
-        key, value, kv_cache.value, slot_mapping,
+    kv_cache = write_to_kv_cache(
+        key, value, kv_cache, slot_mapping,
         num_slices_per_kv_cache_update_block,
         num_kv_update_slices,
     )
@@ -358,7 +359,7 @@ def kernel_wrapper(
     # then do the attention
     output = ragged_paged_attention(
         query,
-        kv_cache.value,
+        kv_cache,
         context_lens,
         block_tables,
         query_start_loc,
@@ -374,7 +375,7 @@ def kernel_wrapper(
         soft_cap= logits_soft_cap,
     )
 
-    return output.reshape(num_tokens, hidden_size)
+    return output.reshape(num_tokens, hidden_size), kv_cache
 
 @partial(jax.jit, donate_argnums=(2,), static_argnames=["num_slices_per_kv_cache_update_block"])
 def write_to_kv_cache(
