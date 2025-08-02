@@ -1019,6 +1019,7 @@ class TPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin):
                 self.input_ids, mm_embeds)
             # xm.mark_step()
             # Run the decoder
+            time_start = time.time()
             with set_forward_context(
                     attn_metadata,
                     self.vllm_config,
@@ -1026,8 +1027,10 @@ class TPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin):
                 hidden_states = self.model(
                     input_ids=input_ids,
                     positions=self.position_ids,
-                    inputs_embeds=inputs_embeds,
                 )
+                hidden_states.block_until_ready()
+            time_end = time.time()
+            print(f"Model forward took {time_end - time_start:.6f} seconds")
             hidden_states = self.select_hidden_states(hidden_states,
                                                       logits_indices)
             logits = self.compute_logits(hidden_states)
@@ -1167,9 +1170,8 @@ class TPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin):
         # Check there are no new graphs compiled - all the graphs should be
         # captured and compiled during warm up.
 
-        time_end = time.time()
-        print(f"execute_model time: {time_end - time_start:.6f} seconds")
-        self.count += 1
+        # time_end = time.time()
+        # print(f"execute_model time: {time_end - time_start:.6f} seconds")
         return model_runner_output
 
     def update_config(self, overrides: dict[str, Any]) -> None:
@@ -1244,7 +1246,7 @@ class TPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin):
         logger.info("Reloading weights inplace...")
         model_loader.load_weights(self.model, model_config=self.model_config)
 
-    @torch.no_grad()
+    # @torch.no_grad()
     def _dummy_run(self, num_tokens: int, num_reqs: int,
                    num_blocks: int) -> None:
         if self.is_multimodal_model:
@@ -1315,10 +1317,7 @@ class TPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin):
                 np.array([num_tokens], dtype=np.int32)), set_forward_context(
                     per_layer_attn_metadata, self.vllm_config, 0):
             out = self.model(input_ids=input_ids,
-                             positions=position_ids,
-                             inputs_embeds=inputs_embeds,)
-            print("input_id shape:", input_ids.shape)
-            print("position_id shape:", position_ids.shape)
+                             positions=position_ids,)
         self._hidden_states_dtype = out.dtype
         print("---------------dummy run finished-----------------")
 
@@ -1530,7 +1529,6 @@ class TPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin):
         Precompile all the subgraphs with possible input shapes.
         """
         # NOTE (Bob): we are not using compilation anymore
-        return
         with self.maybe_setup_dummy_loras(self.lora_config):
             # self._precompile_mm_encoder()
             self._precompile_backbone()

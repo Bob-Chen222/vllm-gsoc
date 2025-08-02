@@ -247,7 +247,7 @@ class TPUWorker:
         #     tpu_kv_cache_bytes = (tpu_kv_cache_bytes * head_size //
         #                           padded_head_size)
         
-        tpu_kv_cache_bytes = 27505662873 // 2
+        tpu_kv_cache_bytes = 27505662873 // 256
         return int(tpu_kv_cache_bytes)
 
     def execute_model(

@@ -188,11 +188,6 @@ class Qwen2Attention(nnx.Module):
         self,
         positions: jax.Array,
         hidden_states: jax.Array,
-        slot_mapping: jax.Array,
-        context_lens: jax.Array,
-        block_tables: jax.Array,
-        query_start_loc: jax.Array,
-        num_seqs: jax.Array,
     ) -> jax.Array:
         qkv, _ = self.qkv_proj(hidden_states)
         
@@ -200,7 +195,7 @@ class Qwen2Attention(nnx.Module):
 
         q, k = self.rotary_emb(positions, q, k)
 
-        attn_output = self.attn(q, k, v, slot_mapping, context_lens, block_tables, query_start_loc, num_seqs)
+        attn_output = self.attn(q, k, v)
         output, _ = self.o_proj(attn_output)
         return output
         
@@ -287,11 +282,6 @@ class Qwen2DecoderLayer(nnx.Module):
         positions: jax.Array,
         hidden_states: jax.Array,
         residual: jax.Array,
-        slot_mapping: jax.Array,
-        context_lens: jax.Array,
-        block_tables: jax.Array,
-        query_start_loc: jax.Array,
-        num_seqs: jax.Array,
     ) -> tuple[jax.Array, jax.Array]:
         hidden_states, residual = self.input_layernorm(
             hidden_states, residual)
@@ -299,11 +289,6 @@ class Qwen2DecoderLayer(nnx.Module):
         hidden_states = self.self_attn(
             positions,
             hidden_states,
-            slot_mapping,
-            context_lens,
-            block_tables,
-            query_start_loc,
-            num_seqs,
         )
 
         # Fully Connected
@@ -430,11 +415,6 @@ class Qwen2Model(nnx.Module):
                 positions,
                 hidden_states,
                 residual,
-                self.slot_mapping,
-                self.context_lens,
-                self.block_tables,
-                self.query_start_loc,
-                self.num_seqs,
             )
         hidden_states, _ = self.norm(hidden_states, residual)
         return hidden_states

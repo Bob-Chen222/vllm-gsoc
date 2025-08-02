@@ -27,6 +27,7 @@ from vllm.model_executor.layers.quantization.base_config import (
 from vllm.model_executor.layers.quantization.kv_cache import BaseKVCacheMethod
 from vllm.platforms import _Backend, current_platform
 from vllm.utils import direct_register_custom_op
+import time
 
 logger = init_logger(__name__)
 USE_XFORMERS_OPS = None
@@ -221,6 +222,7 @@ class Attention(nnx.Module):
         self.q_range = jnp.array(envs.Q_SCALE_CONSTANT, dtype=jnp.float32)
         self.k_range = jnp.array(envs.K_SCALE_CONSTANT, dtype=jnp.float32)
         self.v_range = jnp.array(envs.V_SCALE_CONSTANT, dtype=jnp.float32)
+        self.count = 0
 
     def forward(
         self,
@@ -300,15 +302,9 @@ class Attention(nnx.Module):
         query: jax.Array,
         key: jax.Array,
         value: jax.Array,
-        slot_mapping: jax.Array,
-        context_lens: jax.Array,
-        block_tables: jax.Array,
-        query_start_loc: jax.Array,
-        num_seqs: jax.Array,
         # For some alternate attention backends like MLA the attention output
         # shape does not match the query shape, so we optionally let the model
         # definition specify the output tensor shape.
-        output_shape: Optional[tuple[int, ...]] = None,
     ) -> jax.Array:
         """
         The KV cache is stored inside this class and is accessed via
@@ -325,10 +321,15 @@ class Attention(nnx.Module):
         attn_metadata = forward_context.attn_metadata
         if isinstance(attn_metadata, dict):
             attn_metadata = attn_metadata[self.layer_name]
+        time_start = time.time()
         output, new_kv_cache = self.impl(self, query, key, value,
                                     self_kv_cache, attn_metadata)
+        # output.block_until_ready()
+        time_end = time.time()
+        if self.count == 3:
+            print(f"Attention forward time: {time_end - time_start:.4f} seconds")
+        self.count += 1
         self.kv_cache[0] = new_kv_cache
-        
         return output
 
     def calc_kv_scales(self, query, key, value):
