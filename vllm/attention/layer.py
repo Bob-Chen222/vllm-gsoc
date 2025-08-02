@@ -321,9 +321,12 @@ class Attention(nnx.Module):
         """
 
         self_kv_cache = self.kv_cache[0]
+        forward_context = get_forward_context()
+        attn_metadata = forward_context.attn_metadata
+        if isinstance(attn_metadata, dict):
+            attn_metadata = attn_metadata[self.layer_name]
         return self.impl(self, query, key, value,
-                                    self_kv_cache, slot_mapping, context_lens,
-                                    block_tables, query_start_loc, num_seqs)
+                                    self_kv_cache, attn_metadata)
 
     def calc_kv_scales(self, query, key, value):
         self._q_scale.copy_(torch.abs(query).max() / self.q_range)

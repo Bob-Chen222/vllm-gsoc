@@ -1268,9 +1268,11 @@ class QKVParallelLinear(ColumnParallelLinear):
             param_data = param[suffix].value
             
             if loaded_shard_id == "q":
-                shard_id = self.tp_rank
+                # NOTE(Bob): This is a hack for now
+                shard_id = 0
             else:
-                shard_id = self.tp_rank // self.num_kv_head_replicas
+                # NOTE(Bob): This is a hack for now
+                shard_id = 0
             start_idx = shard_id * shard_size
 
             if not is_sharded_weight:

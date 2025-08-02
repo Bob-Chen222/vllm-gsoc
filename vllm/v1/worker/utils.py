@@ -4,6 +4,7 @@ from collections import defaultdict
 from typing import TYPE_CHECKING, Optional
 
 import torch
+from flax import nnx
 
 from vllm.model_executor.models.interfaces import MultiModalEmbeddings
 from vllm.model_executor.models.utils import extract_layer_index
@@ -159,4 +160,5 @@ def bind_kv_cache(
     # Bind kv_caches to forward context
     for layer_name, kv_cache in kv_caches.items():
         # NOTE: Use list because of v0 PP virtual engine.
+        kv_cache = nnx.Variable(kv_cache)
         forward_context[layer_name].kv_cache = [kv_cache]

@@ -278,11 +278,7 @@ class PallasAttentionBackendImpl(AttentionImpl, nnx.Module):
         key: jax.Array,
         value: jax.Array,
         kv_cache: Tuple[jax.Array, jax.Array],
-        slot_mapping,
-        context_lens,
-        block_tables,
-        query_start_loc,
-        num_seqs,
+        attn_metadata: PallasMetadata,
         output: Optional[jax.Array] = None,
     ) -> jax.Array:
         assert output is None, "Output should be None for Pallas backend in jax"
@@ -297,13 +293,16 @@ class PallasAttentionBackendImpl(AttentionImpl, nnx.Module):
             key,
             value,
             kv_cache,
-            slot_mapping,
-            context_lens,
-            block_tables,
-            query_start_loc,
-            num_seqs,
+            attn_metadata.slot_mapping,
+            attn_metadata.context_lens,
+            attn_metadata.block_tables,
+            attn_metadata.query_start_loc,
+            attn_metadata.num_seqs,
+            attn_metadata.num_kv_update_slices,
+            attn_metadata.num_slices_per_kv_cache_update_block,
         )
         return output
+
 # @jax.jit
 def kernel_wrapper(
         num_heads: int,
@@ -320,6 +319,8 @@ def kernel_wrapper(
         block_tables: jax.Array,
         query_start_loc: jax.Array,
         num_seqs: jax.Array,
+        num_kv_update_slices: jax.Array,
+        num_slices_per_kv_cache_update_block: int,
         kv_sharing_target_layer_name: Optional[str] = None,
 ):
     
@@ -348,9 +349,11 @@ def kernel_wrapper(
         assert kv_sharing_target_layer_name is None
         # Write input keys and values to the KV cache.
         # Skip this if sharing KV cache with an earlier attention layer.
-        kv_cache.value = write_to_kv_cache(
-            key, value, kv_cache.value, slot_mapping
-        )
+    kv_cache.value = write_to_kv_cache(
+        key, value, kv_cache.value, slot_mapping,
+        num_slices_per_kv_cache_update_block,
+        num_kv_update_slices,
+    )
     
     # then do the attention
     output = ragged_paged_attention(
@@ -373,7 +376,7 @@ def kernel_wrapper(
 
     return output.reshape(num_tokens, hidden_size)
 
-@partial(jax.jit, donate_argnums=(2,))
+@partial(jax.jit, donate_argnums=(2,), static_argnames=["num_slices_per_kv_cache_update_block"])
 def write_to_kv_cache(
     key: jax.Array,
     value: jax.Array,
@@ -418,8 +421,8 @@ def write_to_kv_cache(
     original_shape = kv_cache.shape
     kv_cache_flat = kv_cache.reshape((-1,) + kv_cache.shape[2:])
     kv_cache_flat = kv_cache_update(
-        kv, slot_mapping, kv_cache, num_kv_update_slices, page_size,
-        num_slices_per_kv_cache_update_block)
+        kv, slot_mapping, kv_cache_flat, num_kv_update_slices, page_size=page_size,
+        num_slices_per_block=num_slices_per_kv_cache_update_block)
     # NOTE: the in-place copy will be optimized away by XLA compiler.
     # kv_cache.copy_(new_kv_cache)
     return kv_cache_flat.reshape(original_shape)

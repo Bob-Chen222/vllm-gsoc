@@ -170,29 +170,29 @@ class TPUWorker:
             report_usage_stats(self.vllm_config)
 
     def determine_available_memory(self) -> int:
-        kv_caches: dict[str, jax.Array] = {}
-        kv_cache_spec = self.model_runner.get_kv_cache_spec()
-        for layer_name, layer_spec in kv_cache_spec.items():
-            if isinstance(layer_spec, AttentionSpec):
-                # NOTE(Bob): hack
+        # kv_caches: dict[str, jax.Array] = {}
+        # kv_cache_spec = self.model_runner.get_kv_cache_spec()
+        # for layer_name, layer_spec in kv_cache_spec.items():
+        #     if isinstance(layer_spec, AttentionSpec):
+        #         # NOTE(Bob): hack
 
-                # Use an empty tensor instead of `None`` to force Dynamo to pass
-                # it by reference, rather by specializing on the value ``None``.
-                tpu_kv_cache = jnp.empty((0,))
-                kv_caches[layer_name] = tpu_kv_cache
-            else:
-                raise NotImplementedError(
-                    f"Unsupported KV cache spec '{type(layer_spec)}'")
+        #         # Use an empty tensor instead of `None`` to force Dynamo to pass
+        #         # it by reference, rather by specializing on the value ``None``.
+        #         tpu_kv_cache = jnp.empty((0,))
+        #         kv_caches[layer_name] = tpu_kv_cache
+        #     else:
+        #         raise NotImplementedError(
+        #             f"Unsupported KV cache spec '{type(layer_spec)}'")
 
-        runner_kv_caches: list[jax.Array] = []
-        bind_kv_cache(
-            kv_caches,
-            self.vllm_config.compilation_config.static_forward_context,
-            runner_kv_caches)
+        # runner_kv_caches: list[jax.Array] = []
+        # bind_kv_cache(
+        #     kv_caches,
+        #     self.vllm_config.compilation_config.static_forward_context,
+        #     runner_kv_caches)
 
         # `max_num_tokens >= max_num_batched_tokens` due to padding.
-        with self.model_runner.maybe_setup_dummy_loras(self.lora_config):
-            self.model_runner.profile_run(self.model_runner.max_num_tokens)
+        # with self.model_runner.maybe_setup_dummy_loras(self.lora_config):
+        #     self.model_runner.profile_run(self.model_runner.max_num_tokens)
 
         # # Synchronize before measuring the memory usage.
         # xm.wait_device_ops()
@@ -220,32 +220,34 @@ class TPUWorker:
             device_usage = tpu_info.metrics.get_chip_usage(chip_type)
             total_memory_size = device_usage[0].total_memory
             current_mem = device_usage[0].memory_usage
-        else:
-            m = xm.get_memory_info(self.device)
-            total_memory_size = m["bytes_limit"]
-            current_mem = m["bytes_used"]
+        # else:
+        #     m = xm.get_memory_info(self.device)
+        #     total_memory_size = m["bytes_limit"]
+        #     current_mem = m["bytes_used"]
         # Ideally we would use profiled = m["peak_bytes_used"] to
         # get weights + activations. But there is memory used during
         # compilation / weight loading that impacts the peak and
         # there is no way to reset peak memory in XLA, So we
         # use the heuristic of 2% of weights.
-        profiled = current_mem * 1.02
+        # profiled = current_mem * 1.02
 
-        # Calculate the TPU KV cache size based on profiling.
-        usable_memory_size = int(total_memory_size *
-                                 self.cache_config.gpu_memory_utilization)
-        tpu_kv_cache_bytes = max(usable_memory_size - profiled, 0)
-        head_size = self.model_config.get_head_size()
-        if head_size > 0:
-            padded_head_size = cdiv(
-                head_size, TPU_HEAD_SIZE_ALIGNMENT) * TPU_HEAD_SIZE_ALIGNMENT
-            if padded_head_size != head_size:
-                logger.warning_once("head size is padded to %d",
-                                    padded_head_size)
-            # We adjust the usable memory size for the KV cache to prevent OOM
-            # errors, even after padding the head_size.
-            tpu_kv_cache_bytes = (tpu_kv_cache_bytes * head_size //
-                                  padded_head_size)
+        # # Calculate the TPU KV cache size based on profiling.
+        # usable_memory_size = int(total_memory_size *
+        #                          self.cache_config.gpu_memory_utilization)
+        # tpu_kv_cache_bytes = max(usable_memory_size - profiled, 0)
+        # head_size = self.model_config.get_head_size()
+        # if head_size > 0:
+        #     padded_head_size = cdiv(
+        #         head_size, TPU_HEAD_SIZE_ALIGNMENT) * TPU_HEAD_SIZE_ALIGNMENT
+        #     if padded_head_size != head_size:
+        #         logger.warning_once("head size is padded to %d",
+        #                             padded_head_size)
+        #     # We adjust the usable memory size for the KV cache to prevent OOM
+        #     # errors, even after padding the head_size.
+        #     tpu_kv_cache_bytes = (tpu_kv_cache_bytes * head_size //
+        #                           padded_head_size)
+        
+        tpu_kv_cache_bytes = 27505662873 // 2
         return int(tpu_kv_cache_bytes)
 
     def execute_model(

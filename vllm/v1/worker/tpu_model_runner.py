@@ -255,7 +255,7 @@ class TPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin):
         self.query_start_loc_cpu = np.array(jnp.zeros(self.max_num_tokens + 1, dtype=jnp.int32))
 
         self.seq_lens_cpu = np.array(jnp.zeros(self.max_num_reqs, dtype=jnp.int32))
-        self.seq_lens_np = np.array(self.seq_lens_cpu)
+        # self.seq_lens_np = np.array(self.seq_lens_cpu)
 
         # Range tensor with values [0 .. self.max_num_tokens - 1].
         # Used to initialize positions / context_lens / seq_lens
@@ -596,16 +596,16 @@ class TPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin):
             num_scheduled_tokens_per_req
         local_block_start_idx = slices_start // self.block_size
         local_block_end_idx = (slices_end - 1) // self.block_size
-        no_repeat_req_indices = self.arange_np[:num_reqs]
+        no_repeat_req_indices = self.arange_cpu[:num_reqs]
         global_block_start_idx = (
             no_repeat_req_indices * self.max_num_blocks_per_req +
             local_block_start_idx)
         block_lens = local_block_end_idx - local_block_start_idx + 1
         global_block_start_idx = np.repeat(global_block_start_idx, block_lens)
-        slice_arange = np.concatenate([self.arange_np[:n] for n in block_lens])
+        slice_arange = np.concatenate([self.arange_cpu[:n] for n in block_lens])
         global_block_indices = global_block_start_idx + slice_arange
         block_table_cpu = self.input_batch.block_table[0].get_cpu_tensor()
-        block_numbers = block_table_cpu.flatten()[global_block_indices].numpy()
+        block_numbers = block_table_cpu.flatten()[global_block_indices]
         total_block_len = np.sum(block_lens)
         slot_mapping_slices = np.repeat(np.array([[0, self.block_size]],
                                                  dtype=np.int32),
@@ -722,22 +722,19 @@ class TPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin):
         # Zero out to avoid spurious values from prev iteration (last cp chunk)
         self.input_ids_cpu[
             total_num_scheduled_tokens:padded_total_num_scheduled_tokens] = 0
-        self.input_ids = self.input_ids_cpu[:
-                                            padded_total_num_scheduled_tokens].to(
-                                                self.device)
-        self.position_ids = self.positions_cpu[:
-                                               padded_total_num_scheduled_tokens].to(
-                                                   self.device)
+        self.input_ids = jax.device_put(self.input_ids_cpu[:
+                                            padded_total_num_scheduled_tokens], device=jax.devices()[0])
+        self.position_ids = jax.device_put(self.positions_cpu[:
+                                               padded_total_num_scheduled_tokens], device=jax.devices()[0])
         if use_max_model_len:
             block_tables = self.block_table_cpu[:self.num_reqs_max_model_len, :
                                                 self.max_num_blocks_per_req]
             block_tables[:num_reqs, :self.max_num_blocks_per_req] = (
                 self.input_batch.block_table[0].get_cpu_tensor()[:num_reqs])
-            query_start_loc = self.query_start_loc_cpu[:self.
+            query_start_loc = jax.device_put(self.query_start_loc_cpu[:self.
                                                        num_reqs_max_model_len +
-                                                       1].to(self.device)
-            seq_lens = self.seq_lens_cpu[:self.num_reqs_max_model_len].to(
-                self.device)
+                                                       1], device=jax.devices()[0])
+            seq_lens = jax.device_put(self.seq_lens_cpu[:self.num_reqs_max_model_len], device=jax.devices()[0])
         else:
             block_tables = self.block_table_cpu[:self.
                                                 num_reqs_most_model_len, :self.
@@ -750,7 +747,7 @@ class TPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin):
                                                        1].to(self.device)
             seq_lens = self.seq_lens_cpu[:self.num_reqs_most_model_len].to(
                 self.device)
-        block_tables = block_tables.to(self.device)
+        block_tables = jax.device_put(block_tables, jax.devices()[0])
 
         # Calculate the slot mapping
         slot_mapping_metadata = self._get_slot_mapping_metadata(
@@ -1069,7 +1066,7 @@ class TPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin):
         finished_sending, finished_recving = (
             self.get_finished_kv_transfers(scheduler_output))
 
-        selected_token_ids = torch.cat(combined_selected_tokens, dim=0)
+        selected_token_ids = jnp.concatenate(combined_selected_tokens, axis=0)
         if tpu_sampling_metadata.logprobs:
 
             def concat_lists(input_lists):
@@ -1273,7 +1270,7 @@ class TPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin):
         query_lens = [1] * num_reqs
         query_start_loc = jnp.cumsum(jnp.array([0] + query_lens,
                                                     dtype=jnp.int32),
-                                       dim=0,
+                                       axis=0,
                                        dtype=jnp.int32)
         context_lens = jnp.ones((num_reqs, ),
                                   dtype=jnp.int32)
