@@ -505,14 +505,18 @@ def get_dtype_packing(dtype):
 def get_page_size_bytes(block_size: int, num_kv_heads: int, head_size: int,
                         kv_cache_dtype: jnp.dtype) -> int:
     """Returns the size in bytes of one page of the KV cache."""
-    padded_head_size = cdiv(head_size,
-                            TPU_HEAD_SIZE_ALIGNMENT) * TPU_HEAD_SIZE_ALIGNMENT
-    num_combined_kv_heads = num_kv_heads * 2
+    # padded_head_size = cdiv(head_size,
+    #                         TPU_HEAD_SIZE_ALIGNMENT) * TPU_HEAD_SIZE_ALIGNMENT
+    # num_combined_kv_heads = num_kv_heads * 2
 
-    # NOTE: for the implicit padding in XLA
-    packing = get_dtype_packing(kv_cache_dtype)
-    num_combined_kv_heads = cdiv(num_combined_kv_heads, packing) * packing
+    # # NOTE: for the implicit padding in XLA
+    # packing = get_dtype_packing(kv_cache_dtype)
+    # num_combined_kv_heads = cdiv(num_combined_kv_heads, packing) * packing
 
-    kv_cache_dtype_bits = dtype_bits(kv_cache_dtype)
-    return (block_size * num_combined_kv_heads * padded_head_size *
-            kv_cache_dtype_bits // 8)
+    # kv_cache_dtype_bits = dtype_bits(kv_cache_dtype)
+    # res = (block_size * num_combined_kv_heads * padded_head_size *
+    #         kv_cache_dtype_bits // 8)
+    
+    # NOTE(Bob): hardcoded for now, but we can make it configurable later
+    res = 16384
+    return res

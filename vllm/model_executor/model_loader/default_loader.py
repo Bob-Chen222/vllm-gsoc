@@ -220,7 +220,6 @@ class DefaultModelLoader(BaseModelLoader):
             def _xla_weights_iterator(iterator: Generator):
                 for weights in iterator:
                     yield weights
-                    xm.mark_step()
 
             weights_iterator = _xla_weights_iterator(weights_iterator)
 
