@@ -5,7 +5,9 @@
 from typing import Optional, cast
 
 import numpy as np
-import torch
+# import torch
+import jax.numpy as jnp
+import jax
 
 from vllm.lora.request import LoRARequest
 from vllm.sampling_params import SamplingType
@@ -24,7 +26,7 @@ class InputBatch:
             max_num_reqs: int,
             max_model_len: int,
             max_num_batched_tokens: int,
-            device: torch.device,
+            device: jax.Device,
             pin_memory: bool,
             vocab_size: int,
             block_sizes: list[int],  # The block_size of each kv cache group
@@ -43,24 +45,17 @@ class InputBatch:
         # Find a way to reduce the CPU memory usage.
         # This buffer is not directly transferred to the GPU, so it does not
         # need to be pinned.
-        self.token_ids_cpu_tensor = torch.zeros(
+        self.token_ids_cpu = np.array(jnp.zeros(
             (max_num_reqs, max_model_len),
-            device="cpu",
-            dtype=torch.int32,
-            pin_memory=False,
-        )
-        self.token_ids_cpu = self.token_ids_cpu_tensor.numpy()
+            dtype=jnp.int32,
+        ))
         self.num_tokens = np.zeros(max_num_reqs, dtype=np.int32)
         self.num_tokens_no_spec = np.zeros(max_num_reqs, dtype=np.int32)
         self.num_prompt_tokens = np.zeros(max_num_reqs, dtype=np.int32)
-        self.num_computed_tokens_cpu_tensor = torch.zeros(
+        self.num_computed_tokens_cpu = np.array(jnp.zeros(
             (max_num_reqs, ),
-            device="cpu",
-            dtype=torch.int32,
-            pin_memory=pin_memory,
-        )
-        self.num_computed_tokens_cpu = \
-            self.num_computed_tokens_cpu_tensor.numpy()
+            dtype=jnp.int32,
+        ))
 
         # Block table.
         self.block_table = MultiGroupBlockTable(
@@ -73,83 +68,54 @@ class InputBatch:
         )
 
         # Sampling-related.
-        self.temperature = torch.empty((max_num_reqs, ),
-                                       dtype=torch.float32,
-                                       device=device)
-        self.temperature_cpu_tensor = torch.empty((max_num_reqs, ),
-                                                  dtype=torch.float32,
-                                                  device="cpu",
-                                                  pin_memory=pin_memory)
-        self.temperature_cpu = self.temperature_cpu_tensor.numpy()
+        self.temperature = jnp.empty((max_num_reqs, ),
+                                       dtype=jnp.float32)
+        self.temperature_cpu = np.array(jnp.empty((max_num_reqs, ),
+                                                  dtype=jnp.float32))
+        # self.temperature_cpu = self.temperature_cpu_tensor.numpy()
         self.greedy_reqs: set[str] = set()
         self.random_reqs: set[str] = set()
 
-        self.top_p = torch.empty((max_num_reqs, ),
-                                 dtype=torch.float32,
-                                 device=device)
-        self.top_p_cpu_tensor = torch.empty((max_num_reqs, ),
-                                            dtype=torch.float32,
-                                            device="cpu",
-                                            pin_memory=pin_memory)
-        self.top_p_cpu = self.top_p_cpu_tensor.numpy()
+        self.top_p = jnp.empty((max_num_reqs, ),
+                                 dtype=jnp.float32)
+        self.top_p_cpu = np.array(jnp.empty((max_num_reqs, ),
+                                            dtype=jnp.float32))
+        # self.top_p_cpu = self.top_p_cpu_tensor.numpy()
         self.top_p_reqs: set[str] = set()
 
-        self.top_k = torch.empty((max_num_reqs, ),
-                                 dtype=torch.int32,
-                                 device=device)
-        self.top_k_cpu_tensor = torch.empty((max_num_reqs, ),
-                                            dtype=torch.int32,
-                                            device="cpu",
-                                            pin_memory=pin_memory)
-        self.top_k_cpu = self.top_k_cpu_tensor.numpy()
+        self.top_k = jnp.empty((max_num_reqs, ),
+                                 dtype=jnp.int32)
+        self.top_k_cpu = np.array(jnp.empty((max_num_reqs, ),
+                                            dtype=jnp.int32))
         self.top_k_reqs: set[str] = set()
 
-        self.min_p = torch.empty((max_num_reqs, ),
-                                 dtype=torch.float32,
-                                 device=device)
-        self.min_p_cpu_tensor = torch.empty((max_num_reqs, ),
-                                            dtype=torch.float32,
-                                            device="cpu",
-                                            pin_memory=pin_memory)
-        self.min_p_cpu = self.min_p_cpu_tensor.numpy()
+        self.min_p = jnp.empty((max_num_reqs, ),
+                                 dtype=jnp.float32)
+        self.min_p_cpu = np.array(jnp.empty((max_num_reqs, ),
+                                            dtype=jnp.float32))
         self.min_p_reqs: set[str] = set()
 
         # Frequency penalty related data structures
-        self.frequency_penalties = torch.empty((max_num_reqs, ),
-                                               dtype=torch.float,
-                                               device=device)
-        self.frequency_penalties_cpu_tensor = torch.empty(
+        self.frequency_penalties = jnp.empty((max_num_reqs, ),
+                                               dtype=jnp.float32)
+        self.frequency_penalties_cpu = np.array(jnp.empty(
             (max_num_reqs, ),
-            dtype=torch.float,
-            device="cpu",
-            pin_memory=pin_memory)
-        self.frequency_penalties_cpu = \
-            self.frequency_penalties_cpu_tensor.numpy()
+            dtype=jnp.float32))
         self.frequency_penalties_reqs: set[str] = set()
 
         # Presence penalty related data structures
-        self.presence_penalties = torch.empty((max_num_reqs, ),
-                                              dtype=torch.float,
-                                              device=device)
-        self.presence_penalties_cpu_tensor = torch.empty((max_num_reqs, ),
-                                                         dtype=torch.float,
-                                                         device="cpu",
-                                                         pin_memory=pin_memory)
-        self.presence_penalties_cpu = self.presence_penalties_cpu_tensor.numpy(
-        )
+        self.presence_penalties = jnp.empty((max_num_reqs, ),
+                                              dtype=jnp.float32)
+        self.presence_penalties_cpu = np.array(jnp.empty((max_num_reqs, ),
+                                                         dtype=jnp.float32))
         self.presence_penalties_reqs: set[str] = set()
 
         # Repetition penalty related data structures
-        self.repetition_penalties = torch.empty((max_num_reqs, ),
-                                                dtype=torch.float,
-                                                device=device)
-        self.repetition_penalties_cpu_tensor = torch.empty(
+        self.repetition_penalties = jnp.empty((max_num_reqs, ),
+                                                dtype=jnp.float32)
+        self.repetition_penalties_cpu = np.array(jnp.empty(
             (max_num_reqs, ),
-            dtype=torch.float,
-            device="cpu",
-            pin_memory=pin_memory)
-        self.repetition_penalties_cpu = \
-            self.repetition_penalties_cpu_tensor.numpy()
+            dtype=jnp.float32))
         self.repetition_penalties_reqs: set[str] = set()
 
         # req_index -> (min_tokens, stop_token_ids)
@@ -164,7 +130,7 @@ class InputBatch:
         # req_index -> generator
         # NOTE(woosuk): The indices of the requests that do not have their own
         # generator should not be included in the dictionary.
-        self.generators: dict[int, torch.Generator] = {}
+        # self.generators: dict[int, torch.Generator] = {}
 
         self.num_logprobs: dict[str, int] = {}
         # NOTE(rob): num_prompt_logprobs only includes reqs
@@ -179,8 +145,8 @@ class InputBatch:
         self.has_allowed_token_ids: set[str] = set()
         # NOTE(lufang): In the mask tensor, if the corresponding token allowed,
         # the value is False. Since we use masked_fill_ to set -inf.
-        self.allowed_token_ids_mask: Optional[torch.Tensor] = None
-        self.allowed_token_ids_mask_cpu_tensor: Optional[torch.Tensor] = None
+        self.allowed_token_ids_mask: Optional[jax.Array] = None
+        self.allowed_token_ids_mask_cpu_tensor: Optional[jax.Array] = None
 
         # req_index -> bad_words_token_ids
         self.bad_words_token_ids: dict[int, list[list[int]]] = {}
@@ -270,8 +236,8 @@ class InputBatch:
 
         # NOTE(woosuk): self.generators should not include the requests that
         # do not have their own generator.
-        if request.generator is not None:
-            self.generators[req_index] = request.generator
+        # if request.generator is not None:
+        #     self.generators[req_index] = request.generator
 
         if sampling_params.logprobs is not None:
             self.num_logprobs[req_id] = sampling_params.logprobs
@@ -281,6 +247,7 @@ class InputBatch:
             self.logit_bias[req_index] = sampling_params.logit_bias
 
         if sampling_params.allowed_token_ids:
+            assert False, "not supported in jax yet"
             self.has_allowed_token_ids.add(req_id)
             if self.allowed_token_ids_mask_cpu_tensor is None:
                 # Lazy allocation for this tensor, which can be large.
@@ -305,6 +272,7 @@ class InputBatch:
 
         # Add request lora ID
         if request.lora_request:
+            assert False, "not supported in jax"
             lora_id = request.lora_request.lora_int_id
             if lora_id not in self.lora_id_to_request_ids:
                 self.lora_id_to_request_ids[lora_id] = set()
@@ -334,7 +302,8 @@ class InputBatch:
         self.frequency_penalties_reqs.discard(req_id)
         self.presence_penalties_reqs.discard(req_id)
         self.repetition_penalties_reqs.discard(req_id)
-        self.generators.pop(req_index, None)
+        # NOTE(Bob): not supported in jax
+        # self.generators.pop(req_index, None)
         self.num_logprobs.pop(req_id, None)
         self.num_prompt_logprobs.pop(req_id, None)
         self.in_progress_prompt_logprobs_cpu.pop(req_id, None)
@@ -357,6 +326,7 @@ class InputBatch:
         return req_index
 
     def swap_states(self, i1: int, i2: int) -> None:
+        assert False, "not supported in jax yet"
         old_id_i1 = self._req_ids[i1]
         old_id_i2 = self._req_ids[i2]
         self._req_ids[i1], self._req_ids[i2] =\
@@ -472,9 +442,9 @@ class InputBatch:
             self.repetition_penalties_cpu[
                 empty_index] = self.repetition_penalties_cpu[last_req_index]
             self.min_p_cpu[empty_index] = self.min_p_cpu[last_req_index]
-            generator = self.generators.pop(last_req_index, None)
-            if generator is not None:
-                self.generators[empty_index] = generator
+            # generator = self.generators.pop(last_req_index, None)
+            # if generator is not None:
+            #     self.generators[empty_index] = generator
 
             min_token = self.min_tokens.pop(last_req_index, None)
             if min_token is not None:
@@ -501,7 +471,8 @@ class InputBatch:
         del self._req_ids[self.num_reqs:]
         del self.req_output_token_ids[self.num_reqs:]
 
-    def _make_prompt_token_ids_tensor(self) -> torch.Tensor:
+    def _make_prompt_token_ids_tensor(self) -> jax.Array:
+        assert False
         max_prompt_len = self.num_prompt_tokens[:self.num_reqs].max()
         prompt_token_ids_cpu_tensor = torch.empty(
             (self.num_reqs, max_prompt_len),

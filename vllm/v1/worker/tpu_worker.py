@@ -4,12 +4,12 @@
 import os
 from typing import Any, Optional
 
-import torch
-import torch.distributed
-import torch.nn as nn
-import torch_xla.core.xla_model as xm
-import torch_xla.debug.profiler as xp
-import torch_xla.runtime as xr
+# import torch
+# import torch.distributed
+# import torch.nn as nn
+# import torch_xla.core.xla_model as xm
+# import torch_xla.debug.profiler as xp
+# import torch_xla.runtime as xr
 
 import jax
 import jax.numpy as jnp
@@ -129,13 +129,13 @@ class TPUWorker:
 
         # Device initialization should happen after initializing
         # the distributed runtime.
-        self.device = xm.xla_device()
+        self.device = jax.devices()[0]
         self.device_config.device = self.device
 
         # Set random seed.
         set_random_seed(self.model_config.seed)
-        if self.model_config.seed is not None:
-            xm.set_rng_state(self.model_config.seed, self.device)
+        # if self.model_config.seed is not None:
+            # xm.set_rng_state(self.model_config.seed, self.device)
 
         # Increase the cache size limit, which is the maximum number of
         # dynamo graphs that can be compiled.
@@ -318,6 +318,7 @@ class TPUWorker:
     ) -> None:
         """Initialize the distributed environment."""
         if self.use_spmd:
+            assert False, "not supported for jax"
             xr.use_spmd()
         # NOTE(woosuk): This is just to initialize the TP group and broadcast
         # the input objects on CPU. The all-reduce and all-gather ops on TPU

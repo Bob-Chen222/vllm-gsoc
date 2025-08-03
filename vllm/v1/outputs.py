@@ -34,6 +34,7 @@ class LogprobsTensors(NamedTuple):
     selected_token_ranks: torch.Tensor
 
     def tolists(self):
+        assert False, "not supported in jax yet"
         return LogprobsLists(
             self.logprob_token_ids.tolist(),
             self.logprobs.tolist(),

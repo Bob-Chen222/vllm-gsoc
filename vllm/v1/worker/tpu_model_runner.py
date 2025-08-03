@@ -14,9 +14,9 @@ import jax.numpy as jnp
 import flax.nnx as nnx
 from functools import partial
 # TPU XLA related
-import torch_xla.core.xla_model as xm
-import torch_xla.distributed.spmd as xs
-import torch_xla.runtime as xr
+# import torch_xla.core.xla_model as xm
+# import torch_xla.distributed.spmd as xs
+# import torch_xla.runtime as xr
 
 import vllm.envs as envs
 from vllm.attention.backends.abstract import AttentionType
@@ -112,7 +112,7 @@ class TPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin):
     def __init__(
         self,
         vllm_config: VllmConfig,
-        device: torch.device,
+        device: jax.Device,
         original_parallel_config: Optional[ParallelConfig] = None,
     ):
         self.vllm_config = vllm_config
@@ -146,7 +146,7 @@ class TPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin):
         self.enforce_eager = model_config.enforce_eager
 
         self.num_xla_graphs = 0
-        self._update_num_xla_graphs("init")
+        # self._update_num_xla_graphs("init")
 
         self.pin_memory = is_pin_memory_available()
         self.dtype = self.model_config.dtype
@@ -1198,33 +1198,35 @@ class TPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin):
         # determine the order of concatenating the output tensors.
         # As a workaround, we use the xm's rank assignment only when loading
         # the embedding weights.
-        xm_tp_rank = xr.global_ordinal()
-        with patch(
-                "vllm.model_executor.layers.vocab_parallel_embedding."
-                "get_tensor_model_parallel_rank",
-                return_value=xm_tp_rank):
-            try:
-                if self.use_spmd:
-                    tpu_loader = TPUModelLoader(
-                        load_config=self.vllm_config.load_config)
-                    model = tpu_loader.load_model(
-                        vllm_config=self.vllm_config,
-                        model_config=self.vllm_config.model_config,
-                        mesh=self.mesh)
-                else:
-                    model_loader = get_model_loader(self.load_config)
-                    logger.info("Loading model from scratch...")
-                    model = model_loader.load_model(
-                        vllm_config=self.vllm_config,
-                        model_config=self.model_config)
-            except RuntimeError as e:
-                raise RuntimeError(
-                    f"Unable to load model, a likely reason is the model is "
-                    "too large for the current device's HBM memory. "
-                    "Consider switching to a smaller model "
-                    "or sharding the weights on more chips. "
-                    f"See the detailed error: {e}") from e
+        # xm_tp_rank = xr.global_ordinal()
+        # with patch(
+        #         "vllm.model_executor.layers.vocab_parallel_embedding."
+        #         "get_tensor_model_parallel_rank",
+        #         return_value=xm_tp_rank):
+        #     try:
+        #         if self.use_spmd:
+        #             tpu_loader = TPUModelLoader(
+        #                 load_config=self.vllm_config.load_config)
+        #             model = tpu_loader.load_model(
+        #                 vllm_config=self.vllm_config,
+        #                 model_config=self.vllm_config.model_config,
+        #                 mesh=self.mesh)
+        #         else:
+        try:
+            model_loader = get_model_loader(self.load_config)
+            logger.info("Loading model from scratch...")
+            model = model_loader.load_model(
+                vllm_config=self.vllm_config,
+                model_config=self.model_config)
+        except RuntimeError as e:
+            raise RuntimeError(
+                f"Unable to load model, a likely reason is the model is "
+                "too large for the current device's HBM memory. "
+                "Consider switching to a smaller model "
+                "or sharding the weights on more chips. "
+                f"See the detailed error: {e}") from e
         if self.lora_config is not None:
+            assert False, "not supported in jax"
             model = self.load_lora_model(model, self.model_config,
                                          self.scheduler_config,
                                          self.lora_config, self.device)
@@ -1433,7 +1435,7 @@ class TPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin):
         xm.wait_device_ops()
         end = time.perf_counter()
         logger.info("Compilation finished in %.2f [secs].", end - start)
-        self._update_num_xla_graphs("select_hidden_states")
+        # self._update_num_xla_graphs("select_hidden_states")
 
     def _precompile_compute_logits(self) -> None:
         logger.info("Compiling compute_logits with different input shapes.")
@@ -1449,7 +1451,7 @@ class TPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin):
         xm.wait_device_ops()
         end = time.perf_counter()
         logger.info("Compilation finished in %.2f [secs].", end - start)
-        self._update_num_xla_graphs("compute_logits")
+        # self._update_num_xla_graphs("compute_logits")
 
     def _precompile_structured_decoding(self) -> None:
         logger.info(
@@ -1473,7 +1475,7 @@ class TPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin):
         xm.wait_device_ops()
         end = time.perf_counter()
         logger.info("Compilation finished in %.2f [secs].", end - start)
-        self._update_num_xla_graphs("structured_decoding")
+        # self._update_num_xla_graphs("structured_decoding")
 
     def _precompile_sample_from_logits(self) -> None:
         logger.info(
@@ -1504,7 +1506,7 @@ class TPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin):
         xm.wait_device_ops()
         end = time.perf_counter()
         logger.info("Compilation finished in %.2f [secs].", end - start)
-        self._update_num_xla_graphs("sample_from_logits")
+        # self._update_num_xla_graphs("sample_from_logits")
 
     def _precompile_gather_logprobs(self) -> None:
         logger.info("Compiling gather_logprobs with different input shapes.")
@@ -1522,7 +1524,7 @@ class TPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin):
         xm.wait_device_ops()
         end = time.perf_counter()
         logger.info("Compilation finished in %.2f [secs].", end - start)
-        self._update_num_xla_graphs("gather_logprobs")
+        # self._update_num_xla_graphs("gather_logprobs")
 
     def capture_model(self) -> None:
         """
