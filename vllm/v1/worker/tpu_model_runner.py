@@ -7,8 +7,8 @@ from typing import TYPE_CHECKING, Any, Literal, Optional, Union, cast
 from unittest.mock import patch
 
 import numpy as np
-import torch
-import torch.nn as nn
+# import torch
+# import torch.nn as nn
 import jax
 import jax.numpy as jnp
 import flax.nnx as nnx
@@ -21,7 +21,7 @@ from functools import partial
 import vllm.envs as envs
 from vllm.attention.backends.abstract import AttentionType
 from vllm.attention.layer import Attention
-from vllm.compilation.wrapper import TorchCompileWrapperWithCustomDispatcher
+# from vllm.compilation.wrapper import TorchCompileWrapperWithCustomDispatcher
 from vllm.config import (ParallelConfig, VllmConfig,
                          get_layers_from_vllm_config, update_config)
 from vllm.distributed.kv_transfer import (get_kv_transfer_group,
@@ -153,6 +153,7 @@ class TPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin):
         if cache_config.cache_dtype == "auto":
             model_dtype = self.dtype
             if isinstance(model_dtype, str):
+                assert False, "not supported in jax yet"
                 self.kv_cache_dtype = TPU_STR_DTYPE_TO_TORCH_DTYPE[model_dtype]
             else:
                 self.kv_cache_dtype = model_dtype
@@ -271,18 +272,14 @@ class TPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin):
         self.shared_kv_cache_layers: dict[str, str] = {}
 
         # tensors for structured decoding
-        self.grammar_bitmask_cpu = torch.zeros(
+        self.grammar_bitmask_cpu = np.array(jnp.zeros(
             (self.max_num_reqs, cdiv(self.vocab_size, 32)),
-            dtype=torch.int32,
-            device="cpu",
-            pin_memory=self.pin_memory)
-        self.require_structured_out_cpu = torch.zeros(
+            dtype=jnp.int32))
+        self.require_structured_out_cpu = jnp.zeros(
             (self.max_num_reqs, 1),
-            dtype=torch.bool,
-            device="cpu",
-            pin_memory=self.pin_memory)
-        self.structured_decode_arange = torch.arange(
-            0, 32, device="cpu", pin_memory=self.pin_memory)
+            dtype=jnp.bool)
+        self.structured_decode_arange = np.array(jnp.arange(
+            0, 32))
 
         # Get maximum number of mm items per modality (batch size).
         self.max_num_mm_items_by_modality = dict()
@@ -822,9 +819,9 @@ class TPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin):
 
     def _scatter_placeholders(
         self,
-        embeds: torch.Tensor,
-        is_embed: Optional[torch.Tensor],
-    ) -> torch.Tensor:
+        embeds: jax.Array,
+        is_embed: Optional[jax.Array],
+    ) -> jax.Array:
         assert False, "not used for now"
         if is_embed is None:
             return embeds
@@ -838,9 +835,9 @@ class TPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin):
 
     def _gather_placeholders(
         self,
-        placeholders: torch.Tensor,
-        is_embed: Optional[torch.Tensor],
-    ) -> torch.Tensor:
+        placeholders: jax.Array,
+        is_embed: Optional[jax.Array],
+    ) -> jax.Array:
         assert False, "not used for now"
         if is_embed is None:
             return placeholders
@@ -922,9 +919,9 @@ class TPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin):
     def _gather_mm_embeddings(
         self,
         scheduler_output: "SchedulerOutput",
-    ) -> list[torch.Tensor]:
+    ) -> list[jax.Array]:
         assert False, "not used for now"
-        mm_embeds: list[torch.Tensor] = []
+        mm_embeds: list[jax.Array] = []
         for req_id in self.input_batch.req_ids:
             num_scheduled_tokens = scheduler_output.num_scheduled_tokens[
                 req_id]
@@ -1037,6 +1034,7 @@ class TPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin):
             tpu_sampling_metadata = TPUSupportedSamplingMetadata.\
                 from_input_batch(self.input_batch, padded_num_reqs, self.device)
             if scheduler_output.grammar_bitmask is not None:
+                assert False, "not supported in jax"
                 require_struct_decoding, grammar_bitmask_padded, arange = \
                     self.prepare_structured_decoding_input(logits,
                                                            scheduler_output)
@@ -1071,7 +1069,7 @@ class TPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin):
 
         selected_token_ids = jnp.concatenate(combined_selected_tokens, axis=0)
         if tpu_sampling_metadata.logprobs:
-
+            assert False, "not supported in jax"
             def concat_lists(input_lists):
                 result = []
                 for input_list in input_lists:
@@ -1438,6 +1436,7 @@ class TPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin):
         # self._update_num_xla_graphs("select_hidden_states")
 
     def _precompile_compute_logits(self) -> None:
+        assert False, "not supported in jax"
         logger.info("Compiling compute_logits with different input shapes.")
         start = time.perf_counter()
         hsize = self.model_config.get_hidden_size()
@@ -1733,18 +1732,20 @@ class TPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin):
         if sampling_metadata.all_greedy:
             out_tokens = jnp.argmax(logits, axis=-1, keepdims=True)
         else:
+            assert False, "not supported in jax"
             out_tokens = self.sampler(logits,
                                       sampling_metadata).sampled_token_ids
         return out_tokens
 
     # @torch.compile(backend="openxla", fullgraph=True, dynamic=False)
-    def gather_logprobs(self, logits: torch.Tensor,
-                        sampled_tokens: torch.Tensor) -> LogprobsTensors:
+    def gather_logprobs(self, logits: jax.Array,
+                        sampled_tokens: jax.Array) -> LogprobsTensors:
         """
         Gather the top_logprobs with corresponding tokens. Use a fixed number
         of logprobs as an alternative to having multiple pre-compiled graphs.
         Select the number of logprobs actually demanded by each request on CPU.
         """
+        assert False, "not supported in jax"
         logprobs = self.sampler.compute_logprobs(logits)
         return self.sampler.gather_logprobs(
             logprobs,
@@ -1752,17 +1753,19 @@ class TPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin):
             token_ids=sampled_tokens.squeeze(-1))
 
     # @torch.compile(backend="openxla", fullgraph=True, dynamic=False)
-    def structured_decode(self, require_struct_decoding: torch.Tensor,
-                          grammar_bitmask: torch.Tensor, logits: torch.Tensor,
-                          arange: torch.Tensor) -> torch.Tensor:
+    def structured_decode(self, require_struct_decoding: jax.Array,
+                          grammar_bitmask: jax.Array, logits: jax.Array,
+                          arange: jax.Array) -> jax.Array:
+        assert False, "not supported in jax"
         return torch.where(
             require_struct_decoding,
             self.apply_grammar_bitmask(logits, grammar_bitmask, arange),
             logits)
 
-    def apply_grammar_bitmask(self, logits: torch.Tensor,
-                              grammar_bitmask: torch.Tensor,
-                              arange: torch.Tensor):
+    def apply_grammar_bitmask(self, logits: jax.Array,
+                              grammar_bitmask: jax.Array,
+                              arange: jax.Array):
+        assert False, "not supported in jax"
         assert (logits.shape[0] == grammar_bitmask.shape[0])
         logits_cloned = logits.clone()
         for i in range(logits.shape[0]):
@@ -1780,8 +1783,9 @@ class TPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin):
         return self.model.get_input_embeddings(*args, **kwargs)
 
     def prepare_structured_decoding_input(
-        self, logits: torch.Tensor, scheduler_output: "SchedulerOutput"
-    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        self, logits: jax.Array, scheduler_output: "SchedulerOutput"
+    ) -> tuple[jax.Array, jax.Array, jax.Array]:
+        assert False, "not supported in jax"
         grammar_bitmask = scheduler_output.grammar_bitmask
         assert grammar_bitmask is not None
         num_reqs, _ = logits.shape
@@ -1810,7 +1814,7 @@ class TPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin):
         # It's not guaranteed that all requests in this batch require
         # structured output, so create a bool tensor to represent
         # the requests that need structured output.
-        struct_out_indices = torch.tensor(struct_out_indices, dtype=torch.long)
+        struct_out_indices = jax.Array(struct_out_indices, dtype=torch.long)
         self.require_structured_out_cpu[struct_out_indices] = True
         return self.require_structured_out_cpu[:num_reqs].to(logits.device), \
             self.grammar_bitmask_cpu[:num_reqs].to(logits.device), \
@@ -1819,6 +1823,7 @@ class TPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin):
     def _get_mm_dummy_batch(self, modality: str,
                             batch_size: int) -> BatchedTensorInputs:
         # Dummy data for pre-compiling multimodal models.
+        assert False, "not supported in jax"
         dummy_request_data = self.mm_registry.get_decoder_dummy_data(
             model_config=self.model_config,
             seq_len=self.max_num_tokens,
@@ -1917,50 +1922,54 @@ def _get_padded_token_len(paddings: list[int], x: int) -> int:
 def _make_src_and_dst_indices(
     src_block_ids: list[int],
     dst_block_ids: list[int],
-    src_device: Union[torch.device, str],
-    dst_device: Union[torch.device, str],
-) -> tuple[torch.Tensor, torch.Tensor]:
-    src_indices = torch.tensor(src_block_ids,
+    src_device: Union[jax.Device, str],
+    dst_device: Union[jax.Device, str],
+) -> tuple[jax.Array, jax.Array]:
+    assert False, "not supported in jax"
+    src_indices = jax.Array(src_block_ids,
                                device=src_device,
-                               dtype=torch.int64)
-    dst_indices = torch.tensor(dst_block_ids,
+                               dtype=jnp.int64)
+    dst_indices = jax.Array(dst_block_ids,
                                device=dst_device,
-                               dtype=torch.int64)
+                               dtype=jnp.int64)
     return src_indices, dst_indices
 
 
-@torch.compile(backend="openxla")
+# @torch.compile(backend="openxla")
 def _insert_blocks_to_tpu(
-    cpu_cache: torch.Tensor,
-    tpu_cache: torch.Tensor,
-    cpu_block_indices: torch.Tensor,
-    tpu_block_indices: torch.Tensor,
+    cpu_cache: jax.Array,
+    tpu_cache: jax.Array,
+    cpu_block_indices: jax.Array,
+    tpu_block_indices: jax.Array,
 ) -> None:
+    assert False, "not supoprted in jax"
     torch.ops.xla.dynamo_set_buffer_donor_(tpu_cache, True)
     tpu_cache[tpu_block_indices] = cpu_cache[cpu_block_indices].to(
         tpu_cache.device)
 
 
-@torch.compile(backend="openxla")
+# @torch.compile(backend="openxla")
 def _swap_out_tpu_blocks(
-    tpu_cache: torch.Tensor,
-    cpu_cache: torch.Tensor,
-    tpu_block_indices: torch.Tensor,
-    cpu_block_indices: torch.Tensor,
+    tpu_cache: jax.Array,
+    cpu_cache: jax.Array,
+    tpu_block_indices: jax.Array,
+    cpu_block_indices: jax.Array,
 ) -> None:
     """ tpu blocks to cpu blocks"""
+    assert False, "not supported in jax"
     torch.ops.xla.dynamo_set_buffer_donor_(tpu_cache, True)
     cpu_cache[cpu_block_indices] = tpu_cache[tpu_block_indices].cpu()
 
 
 def copy_kv_blocks(
-    src_kv_caches: dict[str, torch.Tensor],
-    dst_kv_caches: dict[str, torch.Tensor],
+    src_kv_caches: dict[str, jax.Array],
+    dst_kv_caches: dict[str, jax.Array],
     src_block_ids: list[int],
     dst_block_ids: list[int],
     direction: Literal["h2d", "d2h"],
 ) -> None:
     """Copy kv blocks between different buffers."""
+    assert False, "not supported in jax"
     if not src_kv_caches or not dst_kv_caches or \
        not src_block_ids or not dst_block_ids or \
        len(src_block_ids) != len(dst_block_ids):
@@ -2024,22 +2033,24 @@ def replace_set_lora(model):
     def _tpu_set_lora(
         self,
         index: int,
-        lora_a: torch.Tensor,
-        lora_b: torch.Tensor,
-        embeddings_tensor: Optional[torch.Tensor],
-        bias: Optional[torch.Tensor] = None,
+        lora_a: jax.Array,
+        lora_b: jax.Array,
+        embeddings_tensor: Optional[jax.Array],
+        bias: Optional[jax.Array] = None,
     ):
         # TODO: The integer index leads to a recompilation, but converting it
         # to a tensor doesn't seem to work anymore. This might be fixed with a
         # later release of torch_xla.
+        assert False, "not supported in jax"
         self._original_set_lora(index, lora_a, lora_b, embeddings_tensor, bias)
         xm.mark_step()
 
     def _tpu_reset_lora(self, index: int):
+        assert False, "not supported in jax"
         self._original_reset_lora(index)
         xm.mark_step()
 
-    assert False, "not used for now"
+    assert False, "not supported in jax"
     for _, module in model.named_modules():
         if isinstance(module, BaseLayerWithLoRA):
             module._original_set_lora = module.set_lora

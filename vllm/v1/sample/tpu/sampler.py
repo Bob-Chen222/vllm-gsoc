@@ -5,6 +5,8 @@
 import torch
 import torch.nn as nn
 
+from flax import nnx
+
 from vllm.v1.outputs import LogprobsTensors, SamplerOutput
 from vllm.v1.sample.ops.topk_topp_sampler import TopKTopPSampler
 from vllm.v1.sample.tpu.metadata import TPUSupportedSamplingMetadata
@@ -24,6 +26,7 @@ class Sampler(nn.Module):
         logits: torch.Tensor,
         sampling_metadata: TPUSupportedSamplingMetadata,
     ) -> SamplerOutput:
+        assert False
         # Use float32 for the logits.
         logits = logits.to(torch.float32)
         # Sample the next token.

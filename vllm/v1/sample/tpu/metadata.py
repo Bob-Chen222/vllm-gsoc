@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 from typing import Optional
 
 import torch
+import jax
 
 from vllm.v1.worker.tpu_input_batch import InputBatch
 
@@ -24,11 +25,11 @@ class TPUSupportedSamplingMetadata:
     # This class exposes a more xla-friendly interface than SamplingMetadata
     # on TPU, in particular all arguments should be traceable and no optionals
     # are allowed, to avoid graph recompilation on Nones.
-    temperature: torch.Tensor = None
+    temperature: jax.Array = None
 
-    min_p: torch.Tensor = None
-    top_k: torch.Tensor = None
-    top_p: torch.Tensor = None
+    min_p: jax.Array = None
+    top_k: jax.Array = None
+    top_p: jax.Array = None
 
     all_greedy: bool = True
 
@@ -55,12 +56,13 @@ class TPUSupportedSamplingMetadata:
     bad_words_token_ids = None
 
     # Generator not supported by xla
-    _generators: dict[int,
-                      torch.Generator] = field(default_factory=lambda: dict())
+    # _generators: dict[int,
+    #                   torch.Generator] = field(default_factory=lambda: dict())
 
     @property
     def generators(self) -> dict[int, torch.Generator]:
         # Generator not supported by torch/xla. This field must be immutable.
+        assert False, "not supported in jax"
         return self._generators
 
     @classmethod
@@ -68,7 +70,7 @@ class TPUSupportedSamplingMetadata:
         cls,
         input_batch: InputBatch,
         padded_num_reqs: int,
-        xla_device: torch.device,
+        xla_device: jax.Device,
         generate_params_if_all_greedy: bool = False
     ) -> "TPUSupportedSamplingMetadata":
         """
@@ -94,9 +96,10 @@ class TPUSupportedSamplingMetadata:
                 and generate_params_if_all_greedy is False):
             return cls(all_greedy=True, logprobs=needs_logprobs)
 
+        assert False, "not supported in jax yet"
         num_reqs = input_batch.num_reqs
 
-        def fill_slice(cpu_tensor: torch.Tensor, fill_val) -> torch.Tensor:
+        def fill_slice(cpu_tensor: jax.Array, fill_val) -> jax.Array:
             # Pad value is the default one.
             cpu_tensor[num_reqs:padded_num_reqs] = fill_val
 

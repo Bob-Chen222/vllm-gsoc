@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from typing import NamedTuple, Optional
 
 import torch
+import jax
 
 
 class LogprobsLists(NamedTuple):
@@ -27,11 +28,11 @@ class LogprobsLists(NamedTuple):
 class LogprobsTensors(NamedTuple):
 
     # [num_reqs, max_num_logprobs + 1]
-    logprob_token_ids: torch.Tensor
+    logprob_token_ids: jax.Array
     # [num_reqs, max_num_logprobs + 1]
-    logprobs: torch.Tensor
+    logprobs: jax.Array
     # [num_reqs]
-    selected_token_ranks: torch.Tensor
+    selected_token_ranks: jax.Array
 
     def tolists(self):
         assert False, "not supported in jax yet"
@@ -44,6 +45,7 @@ class LogprobsTensors(NamedTuple):
     @staticmethod
     def empty_cpu(num_positions: int,
                   num_tokens_per_position: int) -> "LogprobsTensors":
+        assert False, "not supported in jax yet"
         """Create empty LogprobsTensors on CPU."""
 
         logprob_token_ids = torch.empty(
