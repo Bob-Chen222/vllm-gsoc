@@ -20,6 +20,7 @@ from vllm.distributed import (divide, get_tensor_model_parallel_rank,
                               tensor_model_parallel_all_gather,
                               tensor_model_parallel_all_reduce)
 from vllm.logger import init_logger
+from vllm.model_executor.custom_op import CustomOp
 from vllm.model_executor.layers.quantization.base_config import (
     QuantizationConfig, QuantizeMethodBase)
 from vllm.model_executor.layers.utils import dispatch_unquantized_gemm
@@ -38,6 +39,7 @@ logger = init_logger(__name__)
 
 WEIGHT_LOADER_V2_SUPPORTED = [
     "CompressedTensorsLinearMethod",
+    "CompressedTensorsLinearTransformMethod",
     "BitBLASLinearMethod",
     "GPTQBitBLASLinearMethod",
     "AWQMarlinLinearMethod",
@@ -45,7 +47,6 @@ WEIGHT_LOADER_V2_SUPPORTED = [
     "GPTQMarlinLinearMethod",
     "Fp8LinearMethod",
     "MarlinLinearMethod",
-    "QQQLinearMethod",
     "GPTQMarlin24LinearMethod",
     "TPUInt8LinearMethod",
     "GPTQLinearMethod",
@@ -56,6 +57,7 @@ WEIGHT_LOADER_V2_SUPPORTED = [
     "HQQMarlinMethod",
     "QuarkLinearMethod",
     "ModelOptNvFp4LinearMethod",
+    "PetitNvFp4LinearMethod",
 ]
 
 
@@ -224,12 +226,12 @@ class UnquantizedLinearMethod(LinearMethodBase):
                 layer.use_cpu_sgl = False
 
     def process_weights_after_loading(self, layer: torch.nn.Module) -> None:
+        # special postprocessing for CPU SGL
         if current_platform.is_cpu() and envs.VLLM_CPU_SGL_KERNEL:
+            from vllm.model_executor.layers.utils import check_cpu_sgl_kernel
             N, K = layer.weight.size()
             dtype = layer.weight.dtype
-            if (torch._C._cpu._is_amx_tile_supported()
-                    and dtype == torch.bfloat16 and N % 32 == 0
-                    and K % 32 == 0):
+            if check_cpu_sgl_kernel(N, K, dtype):
                 packed_weight = torch.ops._C.convert_weight_packed(
                     layer.weight)
                 assert packed_weight.size() == layer.weight.size()
@@ -241,7 +243,8 @@ class UnquantizedLinearMethod(LinearMethodBase):
             else:
                 logger.warning(
                     "CPU SGL kernels require Intel AMX support,"
-                    " bfloat16 weight, IC and OC are divisible by 32.")
+                    " bf16/fp16/int8 weight, IC and OC are divisible by "
+                    "32 and 16.")
                 layer.use_cpu_sgl = False
 
     def apply(self,
@@ -265,10 +268,10 @@ class LinearBase(nnx.Module):
     Args:
         input_size: input dimension of the linear layer.
         output_size: output dimension of the linear layer.
-        bias: If true, add bias.
         skip_bias_add: If true, skip adding bias but instead return it.
         params_dtype: Data type for the parameters.
         quant_config: Quantization configure.
+        prefix: Prefix for parameter names.
         return_bias: If true, return bias together with outputs in forward pass.
     """
 
@@ -300,12 +303,8 @@ class LinearBase(nnx.Module):
                                                               prefix=prefix)
         self.return_bias = return_bias
 
-    def forward(
-        self, x: torch.Tensor
-    ) -> Union[torch.Tensor, tuple[torch.Tensor, Optional[Parameter]]]:
-        raise NotImplementedError
 
-
+@CustomOp.register("replicated_linear")
 class ReplicatedLinear(LinearBase):
     """Replicated linear layer.
 
@@ -412,13 +411,14 @@ class MergedReplicatedLinear(ReplicatedLinear):
 
     Args:
         input_size: input dimension of the linear layer.
-        output_size: output dimension of the linear layer.
+        output_sizes: list of output dimensions of the linear layer.
         bias: If true, add bias.
         skip_bias_add: If true, skip adding bias but instead return it.
         params_dtype: Data type for the parameters.
         quant_config: Quantization configure.
         prefix: The name of the layer in the state dict, including all parents
                         (e.g. model.layers.0.qkv_proj)
+        return_bias: If true, return bias together with outputs in forward pass.
     """
 
     def __init__(
@@ -471,9 +471,10 @@ class MergedReplicatedLinear(ReplicatedLinear):
             shard_offset = sum(self.output_sizes[:loaded_shard_id])
             shard_size = self.output_sizes[loaded_shard_id]
 
-        param[shard_offset:shard_offset + shard_size] = loaded_weight
+        param.data[shard_offset:shard_offset + shard_size] = loaded_weight
 
 
+@CustomOp.register("column_parallel_linear")
 class ColumnParallelLinear(LinearBase):
     """Linear layer with column parallelism.
 
@@ -770,8 +771,8 @@ class MergedColumnParallelLinear(ColumnParallelLinear):
                 # If quantized, we need to adjust the offset and size to account
                 # for the packing.
                 if packed_dim == output_dim:
-                    shard_size = shard_size // param.pack_factor
-                    shard_offset = shard_offset // param.pack_factor
+                    shard_size = shard_size // param.packed_factor
+                    shard_offset = shard_offset // param.packed_factor
                     # Special case for Marlin.
                     shard_size, shard_offset = adjust_marlin_shard(
                         param, shard_size, shard_offset)
@@ -809,8 +810,8 @@ class MergedColumnParallelLinear(ColumnParallelLinear):
             # for the packing.
             packed_dim = getattr(param, "packed_dim", None)
             if packed_dim == output_dim:
-                shard_size = shard_size // param.pack_factor
-                shard_offset = shard_offset // param.pack_factor
+                shard_size = shard_size // param.packed_factor
+                shard_offset = shard_offset // param.packed_factor
                 # Special case for Marlin.
                 shard_size, shard_offset = adjust_marlin_shard(
                     param, shard_size, shard_offset)
@@ -1181,8 +1182,8 @@ class QKVParallelLinear(ColumnParallelLinear):
                 # If quantized, we need to adjust the offset and size to account
                 # for the packing.
                 if packed_dim == output_dim:
-                    shard_size = shard_size // param.pack_factor
-                    shard_offset = shard_offset // param.pack_factor
+                    shard_size = shard_size // param.packed_factor
+                    shard_offset = shard_offset // param.packed_factor
 
                     # Special case for Marlin.
                     shard_size, shard_offset = adjust_marlin_shard(
@@ -1232,8 +1233,8 @@ class QKVParallelLinear(ColumnParallelLinear):
             # for the packing.
             packed_dim = getattr(param, "packed_dim", None)
             if packed_dim == output_dim:
-                shard_size = shard_size // param.pack_factor
-                shard_offset = shard_offset // param.pack_factor
+                shard_size = shard_size // param.packed_factor
+                shard_offset = shard_offset // param.packed_factor
 
                 # Special case for Marlin.
                 shard_size, shard_offset = adjust_marlin_shard(
@@ -1309,6 +1310,7 @@ class QKVParallelLinear(ColumnParallelLinear):
             param[suffix].value = jax.lax.dynamic_update_slice(param[suffix].value, loaded_weight, (shard_offset,0))
 
 
+@CustomOp.register("row_parallel_linear")
 class RowParallelLinear(LinearBase):
     """Linear layer with row parallelism.
 
@@ -1493,7 +1495,7 @@ class RowParallelLinear(LinearBase):
         return output, output_bias
 
     def extra_repr(self) -> str:
-        s = f"input_features={self.input_size_per_partition}"
+        s = f"in_features={self.input_size_per_partition}"
         s += f", output_features={self.output_size}"
         s += f", bias={self.bias is not None}"
         s += f", tp_size={self.tp_size}"
@@ -1501,6 +1503,7 @@ class RowParallelLinear(LinearBase):
         return s
 
 
+@CustomOp.register("qkv_cross_parallel_linear")
 class QKVCrossParallelLinear(LinearBase):
     """Linear layers for efficient cross-attention's QKV transformation.
 
@@ -1584,7 +1587,7 @@ class QKVCrossParallelLinear(LinearBase):
             self.bias = torch.nn.Parameter()
             set_weight_attrs(self.bias, {
                 "output_dim": 0,
-                "weight_loader": self.weight_loader,
+                "weight_loader": self.weight_loader_v1,
             })
         else:
             self.bias = None
@@ -1693,6 +1696,18 @@ class QKVCrossParallelLinear(LinearBase):
             # Split kv in half
             k, v = kv_enc.split(self.kv_size, dim=-1)
         return q, k, v
+
+    def weight_loader_v1(self,
+                         param: torch.nn.Parameter,
+                         loaded_weight: torch.Tensor,
+                         loaded_shard_id: Optional[str] = None):
+        # just like all other parameters, does not yet
+        # support loading bias with weight_loader_v2
+        layer = (self.q_proj_decoder
+                 if loaded_shard_id == "q" else self.kv_proj_encoder)
+        target_param = self.select_proj_params(layer, param)
+        shard_id_args = (loaded_shard_id, ) if loaded_shard_id != "q" else ()
+        layer.weight_loader(target_param, loaded_weight, *shard_id_args)
 
     def weight_loader(self,
                       param: torch.nn.Parameter,

@@ -25,11 +25,12 @@
 """Inference-only DeepseekV2/DeepseekV3 model."""
 import typing
 from collections.abc import Callable, Iterable
+from itertools import islice
 from typing import Any, Optional, Union
 
 import torch
 from torch import nn
-from transformers import PretrainedConfig
+from transformers import DeepseekV2Config, DeepseekV3Config
 
 from vllm.attention import Attention
 from vllm.compilation.decorators import support_torch_compile
@@ -48,6 +49,7 @@ from vllm.model_executor.layers.linear import (ColumnParallelLinear,
 from vllm.model_executor.layers.logits_processor import LogitsProcessor
 from vllm.model_executor.layers.quantization import QuantizationConfig
 from vllm.model_executor.layers.rotary_embedding import get_rope
+from vllm.model_executor.layers.shared_fused_moe import SharedFusedMoE
 from vllm.model_executor.layers.vocab_parallel_embedding import (
     ParallelLMHead, VocabParallelEmbedding)
 from vllm.model_executor.model_loader.weight_utils import (
@@ -55,7 +57,7 @@ from vllm.model_executor.model_loader.weight_utils import (
 from vllm.model_executor.sampling_metadata import SamplingMetadata
 from vllm.sequence import IntermediateTensors
 
-from .interfaces import MixtureOfExperts, SupportsPP
+from .interfaces import MixtureOfExperts, SupportsLoRA, SupportsPP
 from .utils import (PPMissingLayer, is_pp_missing_parameter,
                     make_empty_intermediate_tensors_factory, make_layers,
                     maybe_prefix)
@@ -100,7 +102,7 @@ class DeepseekV2MoE(nn.Module):
 
     def __init__(
         self,
-        config: PretrainedConfig,
+        config: Union[DeepseekV2Config, DeepseekV3Config],
         quant_config: Optional[QuantizationConfig] = None,
         prefix: str = "",
         enable_eplb: bool = False,
@@ -126,16 +128,16 @@ class DeepseekV2MoE(nn.Module):
                                      prefix=f"{prefix}.gate")
         if config.topk_method == "noaux_tc":
             self.gate.e_score_correction_bias = nn.Parameter(
-                torch.empty(config.n_routed_experts))
+                torch.empty(config.n_routed_experts, dtype=torch.float32))
         else:
             self.gate.e_score_correction_bias = None
 
         # Load balancing settings.
         vllm_config = get_current_vllm_config()
-        parallel_config = vllm_config.parallel_config
+        eplb_config = vllm_config.parallel_config.eplb_config
         self.enable_eplb = enable_eplb
 
-        self.n_redundant_experts = parallel_config.num_redundant_experts
+        self.n_redundant_experts = eplb_config.num_redundant_experts
         self.n_logical_experts = self.n_routed_experts
         self.n_physical_experts = (self.n_logical_experts +
                                    self.n_redundant_experts)
@@ -146,61 +148,85 @@ class DeepseekV2MoE(nn.Module):
         self.physical_expert_end = (self.physical_expert_start +
                                     self.n_local_physical_experts)
 
-        self.experts = FusedMoE(
-            num_experts=config.n_routed_experts,
-            top_k=config.num_experts_per_tok,
-            hidden_size=config.hidden_size,
-            intermediate_size=config.moe_intermediate_size,
-            reduce_results=False,
-            renormalize=config.norm_topk_prob,
-            quant_config=quant_config,
-            use_grouped_topk=True,
-            num_expert_group=config.n_group,
-            topk_group=config.topk_group,
-            prefix=f"{prefix}.experts",
-            scoring_func=config.scoring_func,
-            e_score_correction_bias=self.gate.e_score_correction_bias,
-            enable_eplb=self.enable_eplb,
-            num_redundant_experts=self.n_redundant_experts)
-
-        if config.n_shared_experts is not None:
+        if config.n_shared_experts is None:
+            self.experts = FusedMoE(
+                num_experts=config.n_routed_experts,
+                top_k=config.num_experts_per_tok,
+                hidden_size=config.hidden_size,
+                intermediate_size=config.moe_intermediate_size,
+                reduce_results=False,
+                renormalize=config.norm_topk_prob,
+                quant_config=quant_config,
+                use_grouped_topk=True,
+                num_expert_group=config.n_group,
+                topk_group=config.topk_group,
+                prefix=f"{prefix}.experts",
+                scoring_func=config.scoring_func,
+                # we do scaling outside, set factor to 1.0 to avoid double mul
+                routed_scaling_factor=1.0,
+                e_score_correction_bias=self.gate.e_score_correction_bias,
+                enable_eplb=self.enable_eplb,
+                num_redundant_experts=self.n_redundant_experts)
+            self.shared_experts = None
+        else:
             intermediate_size = (config.moe_intermediate_size *
                                  config.n_shared_experts)
+
             self.shared_experts = DeepseekV2MLP(
                 hidden_size=config.hidden_size,
                 intermediate_size=intermediate_size,
                 hidden_act=config.hidden_act,
                 quant_config=quant_config,
-                reduce_results=self.experts.must_reduce_shared_expert_outputs(
-                ),
+                reduce_results=False,
                 prefix=f"{prefix}.shared_experts",
             )
+
+            self.experts = SharedFusedMoE(
+                shared_experts=self.shared_experts,
+                num_experts=config.n_routed_experts,
+                top_k=config.num_experts_per_tok,
+                hidden_size=config.hidden_size,
+                intermediate_size=config.moe_intermediate_size,
+                reduce_results=False,
+                renormalize=config.norm_topk_prob,
+                quant_config=quant_config,
+                use_grouped_topk=True,
+                num_expert_group=config.n_group,
+                topk_group=config.topk_group,
+                prefix=f"{prefix}.experts",
+                scoring_func=config.scoring_func,
+                # we do scaling outside, set factor to 1.0 to avoid double mul
+                routed_scaling_factor=1.0,
+                e_score_correction_bias=self.gate.e_score_correction_bias,
+                enable_eplb=self.enable_eplb,
+                num_redundant_experts=self.n_redundant_experts)
 
     def forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
         num_tokens, hidden_dim = hidden_states.shape
         hidden_states = hidden_states.view(-1, hidden_dim)
-        if self.n_shared_experts is not None:
-            shared_output = self.shared_experts(hidden_states)
         # router_logits: (num_tokens, n_experts)
         router_logits, _ = self.gate(hidden_states)
 
-        if hidden_states.dtype != torch.float16:
-            final_hidden_states = self.experts(
-                hidden_states=hidden_states,
-                router_logits=router_logits) * self.routed_scaling_factor
+        fused_moe_out = self.experts(hidden_states=hidden_states,
+                                     router_logits=router_logits)
+
+        if self.shared_experts is not None:
+            shared_output, final_hidden_states = fused_moe_out
         else:
-            # Fix FP16 overflow
-            # See DeepseekV2DecoderLayer for more details.
-            final_hidden_states = self.experts(hidden_states=hidden_states,
-                                               router_logits=router_logits)
-        if shared_output is not None:
-            if hidden_states.dtype != torch.float16:
-                final_hidden_states = final_hidden_states + shared_output
-            else:
-                # Fix FP16 overflow
-                # See DeepseekV2DecoderLayer for more details.
-                final_hidden_states = final_hidden_states + shared_output \
-                    * (1. / self.routed_scaling_factor)
+            shared_output = None
+            final_hidden_states = fused_moe_out
+
+        # Fix FP16 overflow
+        # See DeepseekV2DecoderLayer for more details.
+        if hidden_states.dtype != torch.float16:
+            final_hidden_states *= self.routed_scaling_factor
+        elif self.shared_experts is not None:
+            assert shared_output is not None
+            shared_output *= (1. / self.routed_scaling_factor)
+
+        if self.shared_experts is not None:
+            assert shared_output is not None
+            final_hidden_states += shared_output
 
         if self.tp_size > 1:
             final_hidden_states = (
@@ -221,7 +247,7 @@ class DeepseekV2Attention(nn.Module):
 
     def __init__(
         self,
-        config: PretrainedConfig,
+        config: Union[DeepseekV2Config, DeepseekV3Config],
         hidden_size: int,
         num_heads: int,
         qk_nope_head_dim: int,
@@ -373,7 +399,7 @@ class DeepseekV2MLAAttention(nn.Module):
 
     def __init__(
         self,
-        config: PretrainedConfig,
+        config: Union[DeepseekV2Config, DeepseekV3Config],
         hidden_size: int,
         num_heads: int,
         qk_nope_head_dim: int,
@@ -538,7 +564,7 @@ class DeepseekV2DecoderLayer(nn.Module):
 
     def __init__(
         self,
-        config: PretrainedConfig,
+        config: Union[DeepseekV2Config, DeepseekV3Config],
         prefix: str,
         model_config: ModelConfig,
         cache_config: Optional[CacheConfig] = None,
@@ -712,7 +738,7 @@ class DeepseekV2Model(nn.Module):
             hidden_states = intermediate_tensors["hidden_states"]
             residual = intermediate_tensors["residual"]
 
-        for layer in self.layers[self.start_layer:self.end_layer]:
+        for layer in islice(self.layers, self.start_layer, self.end_layer):
             hidden_states, residual = layer(positions, hidden_states, residual)
 
         if not get_pp_group().is_last_rank:
@@ -725,7 +751,11 @@ class DeepseekV2Model(nn.Module):
         return hidden_states
 
 
-class DeepseekV2ForCausalLM(nn.Module, SupportsPP, MixtureOfExperts):
+class DeepseekV2ForCausalLM(nn.Module, SupportsPP, MixtureOfExperts,
+                            SupportsLoRA):
+    packed_modules_mapping = {
+        "gate_up_proj": ["gate_proj", "up_proj"],
+    }
 
     def __init__(self, *, vllm_config: VllmConfig, prefix: str = ""):
         super().__init__()
@@ -733,6 +763,19 @@ class DeepseekV2ForCausalLM(nn.Module, SupportsPP, MixtureOfExperts):
         quant_config = vllm_config.quant_config
         self.config = config
         self.quant_config = quant_config
+
+        # `packed_modules_mapping` needs to be modified before
+        # initializing DeepseekV2Model, as it is passed inplace to
+        # quantization config init and may be used to select the
+        # quant_method for relevant layers during initialization.
+        self.fuse_qkv_a_proj = hasattr(
+            config, "q_lora_rank") and config.q_lora_rank is not None
+        if self.fuse_qkv_a_proj:
+            self.packed_modules_mapping["fused_qkv_a_proj"] = [
+                "q_a_proj",
+                "kv_a_proj_with_mqa",
+            ]
+
         self.model = DeepseekV2Model(vllm_config=vllm_config,
                                      prefix=maybe_prefix(prefix, "model"))
         if get_pp_group().is_last_rank:
@@ -957,7 +1000,10 @@ class DeepseekV3ForCausalLM(DeepseekV2ForCausalLM):
     pass
 
 
-def get_spec_layer_idx_from_weight_name(config: PretrainedConfig,
+# Compatibility with
+# https://huggingface.co/deepseek-ai/DeepSeek-V3-Base/blob/main/configuration_deepseek.py
+def get_spec_layer_idx_from_weight_name(config: Union[DeepseekV2Config,
+                                                      DeepseekV3Config],
                                         weight_name: str) -> Optional[int]:
     if (hasattr(config, "num_nextn_predict_layers")
             and config.num_nextn_predict_layers > 0):

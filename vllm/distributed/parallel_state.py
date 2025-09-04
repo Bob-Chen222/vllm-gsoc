@@ -40,6 +40,7 @@ from torch.distributed import Backend, ProcessGroup
 from flax.experimental import nnx
 import jax
 import jax.numpy as jnp
+from typing_extensions import deprecated
 
 import vllm.envs as envs
 from vllm.distributed.device_communicators.base_device_communicator import (
@@ -202,8 +203,8 @@ class GroupCoordinator:
     rank_in_group: int  # rank inside the group
     cpu_group: ProcessGroup  # group for CPU communication
     device_group: ProcessGroup  # group for device communication
-    use_device_communicator: bool  # whether to use device communicator
-    device_communicator: DeviceCommunicatorBase  # device communicator
+    # device communicator (if use_device_communicator=True)
+    device_communicator: Optional[DeviceCommunicatorBase]
     mq_broadcaster: Optional[Any]  # shared memory broadcaster
 
     def __init__(
@@ -211,7 +212,7 @@ class GroupCoordinator:
         group_ranks: list[list[int]],
         local_rank: int,
         torch_distributed_backend: Union[str, Backend],
-        use_device_communicator: bool,
+        use_device_communicator: bool,  # whether to use device communicator
         use_message_queue_broadcaster: bool = False,
         group_name: Optional[str] = None,
     ):
@@ -221,8 +222,9 @@ class GroupCoordinator:
 
         self.rank = jax.process_index()
         self.local_rank = local_rank
-        self.device_group = None
-        self.cpu_group = None
+
+        self_device_group = None
+        self_cpu_group = None
 
         for ranks in group_ranks:
             # NOTE(Bob): we cannot do different groups in jax
@@ -254,8 +256,7 @@ class GroupCoordinator:
             self.device = torch.device("cpu")
 
         self.use_device_communicator = use_device_communicator
-
-        self.device_communicator: DeviceCommunicatorBase = None  # type: ignore
+        self.device_communicator = None
         if use_device_communicator and self.world_size > 1:
             device_comm_cls = resolve_obj_by_qualname(
                 current_platform.get_device_communicator_cls())
@@ -401,6 +402,8 @@ class GroupCoordinator:
                     input_: Union[torch.Tensor, list[torch.Tensor]],
                     dim: int = 0,
                     sizes: Optional[list[int]] = None):
+        if self.device_communicator is None:
+            raise ValueError("No device communicator found")
         return self.device_communicator.all_gatherv(input_, dim, sizes)
 
     def reduce_scatter(self,
@@ -426,6 +429,8 @@ class GroupCoordinator:
                         input_: torch.Tensor,
                         dim: int = -1,
                         sizes: Optional[list[int]] = None) -> torch.Tensor:
+        if self.device_communicator is None:
+            raise ValueError("No device communicator found")
         return self.device_communicator.reduce_scatterv(input_, dim, sizes)
 
     def _reduce_scatter_out_place(self, input_: torch.Tensor,
@@ -689,6 +694,8 @@ class GroupCoordinator:
         assert dst < self.world_size, f"Invalid dst rank ({dst})"
 
         if self.use_cpu_custom_send_recv:
+            if self.device_communicator is None:
+                raise ValueError("No device communicator found")
             self.device_communicator.send_tensor_dict(  # type: ignore
                 tensor_dict, dst)
             return None
@@ -750,6 +757,8 @@ class GroupCoordinator:
         assert src < self.world_size, f"Invalid src rank ({src})"
 
         if self.use_cpu_custom_send_recv:
+            if self.device_communicator is None:
+                raise ValueError("No device communicator found")
             return self.device_communicator.recv_tensor_dict(  # type: ignore
                 src)
 
@@ -806,7 +815,7 @@ class GroupCoordinator:
         torch.distributed.barrier(group=self.cpu_group)
 
     def send(self, tensor: torch.Tensor, dst: Optional[int] = None) -> None:
-        """Sends a tensor to the destination rank in a non-blocking way"""
+        """Sends a tensor to the destination rank in a blocking way"""
         """NOTE: `dst` is the local rank of the destination rank."""
         assert False, "not implemented for JAX"
         self.device_communicator.send(tensor, dst)
@@ -902,8 +911,12 @@ def get_tp_group() -> GroupCoordinator:
     return _TP
 
 
-# kept for backward compatibility
-get_tensor_model_parallel_group = get_tp_group
+@deprecated("`get_tensor_model_parallel_group` has been replaced with "
+            "`get_tp_group` and may be removed after v0.12. Please use "
+            "`get_tp_group` instead.")
+def get_tensor_model_parallel_group():
+    return get_tp_group()
+
 
 _PP: Optional[GroupCoordinator] = None
 
@@ -929,16 +942,19 @@ def get_pp_group() -> GroupCoordinator:
     return _PP
 
 
-# kept for backward compatibility
-get_pipeline_model_parallel_group = get_pp_group
+@deprecated("`get_pipeline_model_parallel_group` has been replaced with "
+            "`get_pp_group` and may be removed in v0.12. Please use "
+            "`get_pp_group` instead.")
+def get_pipeline_model_parallel_group():
+    return get_pp_group()
 
 
 @contextmanager
 def graph_capture(device: torch.device):
     """
     `graph_capture` is a context manager which should surround the code that
-    is capturing the CUDA graph. Its main purpose is to ensure that the
-    some operations will be run after the graph is captured, before the graph
+    is capturing the CUDA graph. Its main purpose is to ensure that some
+    operations will be run after the graph is captured, before the graph
     is replayed. It returns a `GraphCaptureContext` object which contains the
     necessary data for the graph capture. Currently, it only contains the
     stream that the graph capture is running on. This stream is set to the
@@ -1038,6 +1054,7 @@ def initialize_model_parallel(
             parallelism.
         pipeline_model_parallel_size: number of GPUs used for pipeline model
             parallelism.
+        backend: name of torch distributed communication backend.
 
     Let's say we have a total of 8 GPUs denoted by g0 ... g7 and we
     use 2 GPUs to parallelize the model tensor, and 4 GPUs to parallelize
@@ -1159,14 +1176,14 @@ def ensure_model_parallel_initialized(
 
     assert (
         get_tensor_model_parallel_world_size() == tensor_model_parallel_size
-    ), ("tensor parallel group already initialized, but of unexpected size: "
-        f"{get_tensor_model_parallel_world_size()=} vs. "
-        f"{tensor_model_parallel_size=}")
+    ), ("tensor parallel group already initialized, but of unexpected size. "
+        f"got: {get_tensor_model_parallel_world_size()=} vs. "
+        f"wanted: {tensor_model_parallel_size=}")
     pp_world_size = get_pp_group().world_size
     assert (pp_world_size == pipeline_model_parallel_size), (
-        "pipeline parallel group already initialized, but of unexpected size: "
-        f"{pp_world_size=} vs. "
-        f"{pipeline_model_parallel_size=}")
+        "pipeline parallel group already initialized, but of unexpected size. "
+        f"got: {pp_world_size=} vs. "
+        f"wanted: {pipeline_model_parallel_size=}")
 
 
 def prepare_communication_buffer_for_model(model: torch.nn.Module):

@@ -18,12 +18,15 @@ from msgspec import msgpack
 
 from vllm import envs
 from vllm.logger import init_logger
+# yapf: disable
 from vllm.multimodal.inputs import (BaseMultiModalField,
                                     MultiModalBatchedField,
                                     MultiModalFieldConfig, MultiModalFieldElem,
                                     MultiModalFlatField, MultiModalKwargs,
                                     MultiModalKwargsItem,
+                                    MultiModalKwargsItems,
                                     MultiModalSharedField, NestedTensors)
+# yapf: enable
 from vllm.v1.engine import UtilityResult
 
 logger = init_logger(__name__)
@@ -49,7 +52,10 @@ def _log_insecure_serialization_warning():
                         "VLLM_ALLOW_INSECURE_SERIALIZATION=1")
 
 
-def _typestr(t: type):
+def _typestr(val: Any) -> Optional[tuple[str, str]]:
+    if val is None:
+        return None
+    t = type(val)
     return t.__module__, t.__qualname__
 
 
@@ -110,35 +116,24 @@ class MsgpackEncoder:
                 int(v) if v is not None else None
                 for v in (obj.start, obj.stop, obj.step))
 
-        if isinstance(obj, MultiModalKwargs):
-            mm: MultiModalKwargs = obj
-            if not mm.modalities:
-                # just return the main dict if there are no modalities.
-                return dict(mm)
+        if isinstance(obj, MultiModalKwargsItem):
+            return self._encode_mm_item(obj)
 
-            # ignore the main dict, it will be re-indexed.
-            # Encode a list of MultiModalKwargsItems as plain dicts
-            # + special handling for .field.
-            # Any tensors *not* indexed by modality will be ignored.
-            return [[{
-                "modality": elem.modality,
-                "key": elem.key,
-                "data": self._encode_nested_tensors(elem.data),
-                "field": self._encode_mm_field(elem.field),
-            } for elem in item.values()]
-                    for itemlist in mm._items_by_modality.values()
-                    for item in itemlist]
+        if isinstance(obj, MultiModalKwargsItems):
+            return self._encode_mm_items(obj)
+
+        if isinstance(obj, MultiModalKwargs):
+            return self._encode_mm_kwargs(obj)
 
         if isinstance(obj, UtilityResult):
             result = obj.result
-            if not envs.VLLM_ALLOW_INSECURE_SERIALIZATION or result is None:
+            if not envs.VLLM_ALLOW_INSECURE_SERIALIZATION:
                 return None, result
             # Since utility results are not strongly typed, we also encode
             # the type (or a list of types in the case it's a list) to
             # help with correct msgspec deserialization.
-            cls = result.__class__
-            return _typestr(cls) if cls is not list else [
-                _typestr(type(v)) for v in result
+            return _typestr(result) if type(result) is not list else [
+                _typestr(v) for v in result
             ], result
 
         if not envs.VLLM_ALLOW_INSECURE_SERIALIZATION:
@@ -189,6 +184,35 @@ class MsgpackEncoder:
             self.aux_buffers.append(arr.data)
         dtype = str(obj.dtype).removeprefix("torch.")
         return dtype, obj.shape, data
+
+    def _encode_mm_items(self, items: MultiModalKwargsItems) -> dict[str, Any]:
+        return {
+            modality: [self._encode_mm_item(item) for item in itemlist]
+            for modality, itemlist in items.items()
+        }
+
+    def _encode_mm_item(self,
+                        item: MultiModalKwargsItem) -> list[dict[str, Any]]:
+        return [self._encode_mm_field_elem(elem) for elem in item.values()]
+
+    def _encode_mm_field_elem(self,
+                              elem: MultiModalFieldElem) -> dict[str, Any]:
+        return {
+            "modality":
+            elem.modality,
+            "key":
+            elem.key,
+            "data": (None if elem.data is None else
+                     self._encode_nested_tensors(elem.data)),
+            "field":
+            self._encode_mm_field(elem.field),
+        }
+
+    def _encode_mm_kwargs(self, kw: MultiModalKwargs) -> dict[str, Any]:
+        return {
+            modality: self._encode_nested_tensors(data)
+            for modality, data in kw.items()
+        }
 
     def _encode_nested_tensors(self, nt: NestedTensors) -> Any:
         if isinstance(nt, torch.Tensor):
@@ -248,14 +272,12 @@ class MsgpackDecoder:
                 return self._decode_tensor(obj)
             if t is slice:
                 return slice(*obj)
+            if issubclass(t, MultiModalKwargsItem):
+                return self._decode_mm_item(obj)
+            if issubclass(t, MultiModalKwargsItems):
+                return self._decode_mm_items(obj)
             if issubclass(t, MultiModalKwargs):
-                if isinstance(obj, list):
-                    return MultiModalKwargs.from_items(
-                        self._decode_mm_items(obj))
-                return MultiModalKwargs({
-                    k: self._decode_nested_tensors(v)
-                    for k, v in obj.items()
-                })
+                return self._decode_mm_kwargs(obj)
             if t is UtilityResult:
                 return self._decode_utility_result(obj)
         return obj
@@ -277,7 +299,9 @@ class MsgpackDecoder:
                 ]
         return UtilityResult(result)
 
-    def _convert_result(self, result_type: Sequence[str], result: Any):
+    def _convert_result(self, result_type: Sequence[str], result: Any) -> Any:
+        if result_type is None:
+            return result
         mod_name, name = result_type
         mod = importlib.import_module(mod_name)
         result_type = getattr(mod, name)
@@ -307,26 +331,38 @@ class MsgpackDecoder:
         # Convert back to proper shape & type
         return arr.view(torch_dtype).view(shape)
 
-    def _decode_mm_items(self, obj: list) -> list[MultiModalKwargsItem]:
-        decoded_items = []
-        for item in obj:
-            elems = []
-            for v in item:
-                v["data"] = self._decode_nested_tensors(v["data"])
-                # Reconstruct the field processor using MultiModalFieldConfig
-                factory_meth_name, *field_args = v["field"]
-                factory_meth = getattr(MultiModalFieldConfig,
-                                       factory_meth_name)
+    def _decode_mm_items(self, obj: dict[str, Any]) -> MultiModalKwargsItems:
+        return MultiModalKwargsItems({
+            modality: [self._decode_mm_item(item) for item in itemlist]
+            for modality, itemlist in obj.items()
+        })
 
-                # Special case: decode the union "slices" field of
-                # MultiModalFlatField
-                if factory_meth_name == "flat":
-                    field_args[0] = self._decode_nested_slices(field_args[0])
+    def _decode_mm_item(self, obj: list[Any]) -> MultiModalKwargsItem:
+        return MultiModalKwargsItem.from_elems(
+            [self._decode_mm_field_elem(v) for v in obj])
 
-                v["field"] = factory_meth(None, *field_args).field
-                elems.append(MultiModalFieldElem(**v))
-            decoded_items.append(MultiModalKwargsItem.from_elems(elems))
-        return decoded_items
+    def _decode_mm_field_elem(self, obj: dict[str,
+                                              Any]) -> MultiModalFieldElem:
+        if obj["data"] is not None:
+            obj["data"] = self._decode_nested_tensors(obj["data"])
+
+        # Reconstruct the field processor using MultiModalFieldConfig
+        factory_meth_name, *field_args = obj["field"]
+        factory_meth = getattr(MultiModalFieldConfig, factory_meth_name)
+
+        # Special case: decode the union "slices" field of
+        # MultiModalFlatField
+        if factory_meth_name == "flat":
+            field_args[0] = self._decode_nested_slices(field_args[0])
+
+        obj["field"] = factory_meth(None, *field_args).field
+        return MultiModalFieldElem(**obj)
+
+    def _decode_mm_kwargs(self, obj: dict[str, Any]) -> MultiModalKwargs:
+        return MultiModalKwargs({
+            modality: self._decode_nested_tensors(data)
+            for modality, data in obj.items()
+        })
 
     def _decode_nested_tensors(self, obj: Any) -> NestedTensors:
         if isinstance(obj, (int, float)):
