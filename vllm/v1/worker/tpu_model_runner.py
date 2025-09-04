@@ -918,7 +918,6 @@ class TPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin):
         intermediate_tensors: Optional[IntermediateTensors] = None,
     ) -> ModelRunnerOutput:
         # Update cached state
-        time_start = time.time()
         self._update_states(scheduler_output)
         if not scheduler_output.total_num_scheduled_tokens:
             if not has_kv_transfer_group():
@@ -953,7 +952,6 @@ class TPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin):
                 self.input_ids, mm_embeds)
             # xm.mark_step()
             # Run the decoder
-            time_start = time.time()
             with set_forward_context(
                     attn_metadata,
                     self.vllm_config,
@@ -962,9 +960,6 @@ class TPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin):
                     input_ids=input_ids,
                     positions=self.position_ids,
                 )
-                hidden_states.block_until_ready()
-            time_end = time.time()
-            print(f"Model forward took {time_end - time_start:.6f} seconds")
             hidden_states = self.select_hidden_states(hidden_states,
                                                       logits_indices)
             logits = self.compute_logits(hidden_states)
@@ -1109,9 +1104,6 @@ class TPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin):
 
         # Check there are no new graphs compiled - all the graphs should be
         # captured and compiled during warm up.
-
-        # time_end = time.time()
-        # print(f"execute_model time: {time_end - time_start:.6f} seconds")
         return model_runner_output
 
     def update_config(self, overrides: dict[str, Any]) -> None:
@@ -1260,7 +1252,6 @@ class TPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin):
             out = self.model(input_ids=input_ids,
                              positions=position_ids,)
         self._hidden_states_dtype = out.dtype
-        print("---------------dummy run finished-----------------")
 
     def _set_active_loras(self, prompt_lora_mapping, token_lora_mapping,
                           lora_requests) -> None:

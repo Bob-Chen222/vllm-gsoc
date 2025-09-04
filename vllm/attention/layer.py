@@ -324,10 +324,6 @@ class Attention(nnx.Module):
         time_start = time.time()
         output, new_kv_cache = self.impl(self, query, key, value,
                                     self_kv_cache, attn_metadata)
-        # output.block_until_ready()
-        time_end = time.time()
-        if self.count == 3:
-            print(f"Attention forward time: {time_end - time_start:.4f} seconds")
         self.count += 1
         self.kv_cache[0] = new_kv_cache
         return output
