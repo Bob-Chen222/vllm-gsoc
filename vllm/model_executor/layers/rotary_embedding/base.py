@@ -3,12 +3,72 @@
 """Rotary Positional Embeddings Base Class."""
 from typing import Optional
 
+import jax
+import jax.numpy as jnp
 import torch
+from functools import partial
+from flax import nnx
 
 from vllm.model_executor.custom_op import CustomOp
 
 from .common import apply_rotary_emb_dispatch, apply_rotary_emb_torch
+def _apply_rotary_emb_jax(
+    x: jnp.ndarray,
+    cos: jnp.ndarray,
+    sin: jnp.ndarray,
+) -> jnp.ndarray:
+    cos = jnp.expand_dims(cos, axis=-2).astype(x.dtype)
+    sin = jnp.expand_dims(sin, axis=-2).astype(x.dtype)
 
+    x1, x2 = jnp.split(x, 2, axis=-1)
+
+    o1 = x1 * cos - x2 * sin
+    o2 = x2 * cos + x1 * sin
+
+    return jnp.concatenate([o1, o2], axis=-1)
+
+
+
+def _apply_rotary_emb(x: torch.Tensor, cos: torch.Tensor, sin: torch.Tensor,
+                      is_neox_style: bool) -> torch.Tensor:
+    """
+    Args:
+        x: [num_tokens, num_heads, head_size]
+        cos: [num_tokens, head_size // 2]
+        sin: [num_tokens, head_size // 2]
+        is_neox_style: Whether to use the Neox-style or GPT-J-style rotary
+            positional embeddings.
+    """
+    if current_platform.is_cuda():
+        return apply_rotary_emb(x.unsqueeze(0), cos, sin,
+                                not is_neox_style).squeeze(0)
+    else:
+        return _apply_rotary_emb_torch(x, cos, sin, is_neox_style)
+
+
+@partial(jax.jit, static_argnames=("head_size", "rotary_dim"))
+def _rotary_embedding(positions: jax.Array, query: jax.Array, key: Optional[jax.Array],cos_sin_cache,
+                      head_size, rotary_dim):
+    positions = positions.flatten()
+    num_tokens = positions.shape[0]
+    cos_sin = jnp.take(cos_sin_cache, positions, axis=0)
+    cos, sin = jnp.split(cos_sin, 2, axis=-1)
+
+    query_shape = query.shape
+    query = jnp.reshape(query, (num_tokens, -1, head_size))
+    query_rot = query[..., :rotary_dim]
+    query_pass = query[..., rotary_dim:]
+    query_rot = _apply_rotary_emb_jax(query_rot, cos, sin)
+    query = jnp.reshape(jnp.concatenate([query_rot, query_pass], axis=-1), query_shape)
+
+    # key may be None in some cases, e.g. cross-layer KV sharing
+    key_shape = key.shape
+    key = jnp.reshape(key, (num_tokens, -1, head_size))
+    key_rot = key[..., :rotary_dim]
+    key_pass = key[..., rotary_dim:]
+    key_rot = _apply_rotary_emb_jax(key_rot, cos, sin)
+    key = jnp.reshape(jnp.concatenate([key_rot, key_pass], axis=-1), key_shape)
+    return query, key
 
 @CustomOp.register("rotary_embedding")
 class RotaryEmbedding(CustomOp):
@@ -21,7 +81,7 @@ class RotaryEmbedding(CustomOp):
         max_position_embeddings: int,
         base: float,
         is_neox_style: bool,
-        dtype: torch.dtype,
+        dtype: jnp.dtype
     ) -> None:
         super().__init__()
         self.head_size = head_size
@@ -32,29 +92,28 @@ class RotaryEmbedding(CustomOp):
         self.dtype = dtype
 
         cache = self._compute_cos_sin_cache()
-        cache = cache.to(dtype)
-        self.cos_sin_cache: torch.Tensor
-        self.register_buffer("cos_sin_cache", cache, persistent=False)
+        cache = jnp.asarray(cache, dtype=dtype)
+        self.cos_sin_cache: jnp.Array
+        self.cos_sin_cache = nnx.Variable(cache)
 
-    def _compute_inv_freq(self, base: float) -> torch.Tensor:
+    def _compute_inv_freq(self, base: float) -> jax.Array:
         """Compute the inverse frequency."""
         # NOTE(woosuk): To exactly match the HF implementation, we need to
         # use CPU to compute the cache and then move it to GPU. However, we
         # create the cache on GPU for faster initialization. This may cause
         # a slight numerical difference between the HF implementation and ours.
-        inv_freq = 1.0 / (base**(torch.arange(
-            0, self.rotary_dim, 2, dtype=torch.float) / self.rotary_dim))
+        inv_freq = 1.0 / (base ** (jnp.arange(0, self.rotary_dim, 2, dtype=jnp.float32) / self.rotary_dim))
         return inv_freq
 
-    def _compute_cos_sin_cache(self) -> torch.Tensor:
+    def _compute_cos_sin_cache(self) -> jax.Array:
         """Compute the cos and sin cache."""
         inv_freq = self._compute_inv_freq(self.base)
-        t = torch.arange(self.max_position_embeddings, dtype=torch.float)
+        t = jnp.arange(self.max_position_embeddings, dtype=jnp.float32)
 
-        freqs = torch.einsum("i,j -> ij", t, inv_freq)
-        cos = freqs.cos()
-        sin = freqs.sin()
-        cache = torch.cat((cos, sin), dim=-1)
+        freqs = jnp.einsum("i,j -> ij", t, inv_freq)
+        cos = jnp.cos(freqs)
+        sin = jnp.sin(freqs)
+        cache = jnp.concatenate([cos, sin], axis=-1)
         return cache
 
     def forward_native(
@@ -76,8 +135,8 @@ class RotaryEmbedding(CustomOp):
         query = query.view(num_tokens, -1, self.head_size)
         query_rot = query[..., :self.rotary_dim]
         query_pass = query[..., self.rotary_dim:]
-        query_rot = apply_rotary_emb_torch(query_rot, cos, sin,
-                                           self.is_neox_style)
+        query_rot = _apply_rotary_emb_torch(query_rot, cos, sin,
+                                            self.is_neox_style)
         query = torch.cat((query_rot, query_pass), dim=-1).reshape(query_shape)
 
         # key may be None in some cases, e.g. cross-layer KV sharing
@@ -86,10 +145,21 @@ class RotaryEmbedding(CustomOp):
             key = key.view(num_tokens, -1, self.head_size)
             key_rot = key[..., :self.rotary_dim]
             key_pass = key[..., self.rotary_dim:]
-            key_rot = apply_rotary_emb_torch(key_rot, cos, sin,
-                                             self.is_neox_style)
+            key_rot = _apply_rotary_emb_torch(key_rot, cos, sin,
+                                              self.is_neox_style)
             key = torch.cat((key_rot, key_pass), dim=-1).reshape(key_shape)
         return query, key
+    
+    # @nnx.jit
+    def __call__(
+            self,
+            positions: jax.Array,
+            query: jax.Array,
+            key: Optional[jax.Array] = None,
+            offsets: Optional[jax.Array] = None,
+    ) -> tuple[jax.Array, Optional[jax.Array]]:
+        return _rotary_embedding(
+            positions, query, key, self.cos_sin_cache.value, self.head_size, self.rotary_dim)
 
     def forward_cuda(
         self,
@@ -200,12 +270,10 @@ class RotaryEmbedding(CustomOp):
             key = key.view(num_tokens, -1, self.head_size)
 
         if self.rotary_dim == self.head_size:
-            query = apply_rotary_emb_dispatch(query, cos, sin,
-                                              self.is_neox_style)
+            query = _apply_rotary_emb(query, cos, sin, self.is_neox_style)
             query = query.reshape(query_shape)
             if key is not None:
-                key = apply_rotary_emb_dispatch(key, cos, sin,
-                                                self.is_neox_style)
+                key = _apply_rotary_emb(key, cos, sin, self.is_neox_style)
                 key = key.reshape(key_shape)
         else:
             head_size = query.shape[-1]

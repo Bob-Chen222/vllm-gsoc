@@ -274,36 +274,11 @@ class TPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin):
         self.structured_decode_arange = np.array(jnp.arange(
             0, 32))
 
-        # Get maximum number of mm items per modality (batch size).
-        self.max_num_mm_items_by_modality = dict()
-        if (self.is_multimodal_model and self.max_num_encoder_input_tokens > 0
-                and self.encoder_cache_size > 0):
-            max_tokens_by_modality_dict = (
-                MULTIMODAL_REGISTRY.
-                get_max_tokens_per_item_by_nonzero_modality(self.model_config))
-            for modality, max_tokens in max_tokens_by_modality_dict.items():
-                # Check how many items of this modality can be supported by
-                # the encoder budget.
-                encoder_budget = min(self.max_num_encoder_input_tokens,
-                                     self.encoder_cache_size)
-
-                max_num_mm_items_encoder_budget = cdiv(encoder_budget,
-                                                       max_tokens)
-
-                # Check how many items of this modality can be supported by
-                # the decoder budget.
-                max_mm_items_per_req = self.mm_registry.\
-                    get_mm_limits_per_prompt(self.model_config)[modality]
-
-                # NOTE: We do not consider max_num_batched_tokens on purpose
-                # because the multimodal embeddings can be generated in advance
-                # and chunked prefilled.
-                max_num_mm_items_decoder_budget = self.max_num_reqs * \
-                    max_mm_items_per_req
-
-                max_num_mm_items = min(max_num_mm_items_encoder_budget,
-                                       max_num_mm_items_decoder_budget)
-                self.max_num_mm_items_by_modality[modality] = max_num_mm_items
+        self.mm_budget = (MultiModalBudget(
+            self.model_config,
+            self.scheduler_config,
+            self.mm_registry,
+        ) if self.supports_mm_inputs else None)
 
         self.sample_from_logits_func = self.sample_from_logits
         self.count = 0
@@ -1228,8 +1203,7 @@ class TPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin):
         actual_num_reqs = min(num_tokens, num_reqs)
         position_ids = jnp.zeros(num_tokens, dtype=jnp.int32)
         padded_num_slices = _get_padded_num_kv_cache_update_slices(
-            num_tokens, self.max_num_reqs, self.block_size,
-            self._num_slices_per_kv_cache_update_block)
+            num_tokens, self.max_num_reqs, self.block_size)
         num_kv_update_slices = jnp.array([padded_num_slices],
                                             dtype=jnp.int32)
         slot_mapping = jnp.zeros((3, padded_num_slices),
@@ -1564,18 +1538,18 @@ class TPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin):
             # xm.mark_step()
             # xm.wait_device_ops()
             end = time.perf_counter()
-            logger.info(
-                "Multimodal Encoder profiling finished in in %.2f [secs].",
-                end - start)
+            # logger.info(
+            #     "Multimodal Encoder profiling finished in in %.2f [secs].",
+            #     end - start)
 
-                    sanity_check_mm_encoder_outputs(
-                        dummy_encoder_outputs,
-                        expected_num_items=max_mm_items_per_batch,
-                    )
+            #         sanity_check_mm_encoder_outputs(
+            #             dummy_encoder_outputs,
+            #             expected_num_items=max_mm_items_per_batch,
+            #         )
 
-                    # Cache the dummy encoder outputs.
-                    self.encoder_cache["tmp"] = dict(
-                        enumerate(dummy_encoder_outputs))
+            #         # Cache the dummy encoder outputs.
+            #         self.encoder_cache["tmp"] = dict(
+            #             enumerate(dummy_encoder_outputs))
 
         # Trigger compilation for general shape.
         self._dummy_run(num_tokens, self.num_reqs_max_model_len,
@@ -1591,7 +1565,7 @@ class TPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin):
 
     def maybe_setup_cross_layer_kv_sharing(
         self,
-        kv_caches: dict[str, torch.Tensor],
+        kv_caches: dict[str, jax.Array],
         kv_cache_config: KVCacheConfig,
     ) -> None:
         """
@@ -1685,7 +1659,7 @@ class TPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin):
                     raise NotImplementedError
 
         # Set up cross-layer KV cache sharing if needed
-        self.maybe_setup_cross_layer_kv_sharing(kv_caches, kv_cache_config)
+        # self.maybe_setup_cross_layer_kv_sharing(kv_caches, kv_cache_config)
 
         bind_kv_cache(
             kv_caches,

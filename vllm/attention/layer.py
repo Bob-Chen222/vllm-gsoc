@@ -184,7 +184,7 @@ class Attention(nnx.Module):
                              alibi_slopes, sliding_window, kv_cache_dtype,
                              logits_soft_cap, attn_type,
                              kv_sharing_target_layer_name, **extra_impl_args)
-        self.backend = backend_name_to_enum(self.attn_backend.get_name())
+        self.backend = backend_name_to_enum(attn_backend.get_name())
         self.dtype = dtype
 
         # For cuda-alike (CUDA and ROCM) and cpu platforms, we control how
@@ -193,7 +193,7 @@ class Attention(nnx.Module):
         # and let torch.compile handle them.
         self.use_direct_call = not current_platform.opaque_attention_op()
 
-        self.use_output = self.attn_backend.accept_output_buffer
+        self.use_output = attn_backend.accept_output_buffer
         compilation_config = get_current_vllm_config().compilation_config
         if prefix in compilation_config.static_forward_context:
             raise ValueError(f"Duplicate layer name: {prefix}")
