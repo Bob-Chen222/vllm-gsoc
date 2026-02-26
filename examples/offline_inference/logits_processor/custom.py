@@ -48,7 +48,13 @@ from vllm.v1.sample.logits_processor.builtin import process_dict_updates
 
 # Hypothetical custom logits processor
 class DummyLogitsProcessor(LogitsProcessor):
-    """Fake logit processor to support unit testing and examples"""
+   """
+    Dummy logits processor used for demonstration and testing.
+
+    This processor masks all tokens except the specified target token.
+    It is mainly intended for testing custom logits processor behavior
+    in vLLM examples.
+    """
 
     def __init__(
         self, vllm_config: VllmConfig, device: torch.device, is_pin_memory: bool
