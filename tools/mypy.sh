@@ -4,10 +4,10 @@ CI=${1:-0}
 PYTHON_VERSION=${2:-local}
 
 if [ "$CI" -eq 1 ]; then
-    set -e
+    set -eu
 fi
 
-if [ $PYTHON_VERSION == "local" ]; then
+if [ "$PYTHON_VERSION" = "local" ]; then
     PYTHON_VERSION=$(python -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')
 fi
 
